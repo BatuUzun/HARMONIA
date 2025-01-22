@@ -15,6 +15,7 @@ import {
   searchArtists,
   searchAlbums,
 } from "../../../api/spotify";
+import { searchPeople } from "../../../api/backend";
 
 export default function SearchScreen() {
   const [isFocused, setIsFocused] = useState(false);
@@ -25,7 +26,7 @@ export default function SearchScreen() {
   const [offset, setOffset] = useState(0); // API'deki başlangıç noktası için offset
   const [isLoading, setIsLoading] = useState(false);
 
-  const options = ["Artists", "Albums"];
+  const options = ["Artists", "Albums", "People"];
 
   const handleCancel = () => {
     setSearchText("");
@@ -50,17 +51,36 @@ export default function SearchScreen() {
     setIsLoading(true);
     try {
       let results;
+
       if (selectedOption === "Artists") {
-        results = await searchArtists(accessToken, text, offset); // offset ekleniyor
+        results = await searchArtists(accessToken, text, offset);
       } else if (selectedOption === "Albums") {
-        results = await searchAlbums(accessToken, text, offset); // offset ekleniyor
+        results = await searchAlbums(accessToken, text, offset);
+      } else if (selectedOption === "People") {
+        const peopleResults = await searchPeople(text);
+        const bucketUrl = "https://harmonia-profile-images.s3.amazonaws.com";
+
+        results = peopleResults.map((person) => ({
+          id: person.id,
+          name: person.username,
+          images: [
+            {
+              url: person.profileImage?.startsWith("http")
+                ? person.profileImage
+                : `${bucketUrl}/${person.profileImage}`,
+            },
+          ],
+        }));
       }
 
-      if (loadMore) {
-        setSearchResults((prev) => [...prev, ...results]); // Daha fazla sonuç ekle
-      } else {
-        setSearchResults(results); // İlk sonuç seti
-      }
+      setSearchResults((prev) => {
+        const combinedResults = loadMore ? [...prev, ...results] : results;
+        const uniqueResults = combinedResults.filter(
+          (item, index, self) =>
+            index === self.findIndex((t) => t.id === item.id)
+        );
+        return uniqueResults;
+      });
     } catch (error) {
       console.error("Search Error:", error);
     } finally {
@@ -183,30 +203,62 @@ export default function SearchScreen() {
 
       <View style={styles.resultsContainer}>
         <FlatList
+          key={selectedOption} // FlatList'i yeniden oluşturmak için selectedOption kullanıldı.
           data={searchResults}
           keyExtractor={(item, index) => `${item.id}-${index}`} // Benzersiz key
           renderItem={({ item }) => (
-            <View style={styles.resultItem}>
+            <View
+              style={[
+                styles.resultItem,
+                selectedOption === "People"
+                  ? styles.peopleResultItem
+                  : styles.defaultResultItem,
+              ]}
+            >
               <Image
-                source={{ uri: item.images?.[0]?.url }}
+                source={{
+                  uri:
+                    item.images?.[0]?.url ||
+                    "https://harmonia-profile-images.s3.amazonaws.com/default.png",
+                }}
                 style={[
                   styles.image,
-                  selectedOption === "Artists" ? styles.artistImage : null,
+                  selectedOption === "Artists"
+                    ? styles.artistImage
+                    : selectedOption === "People"
+                    ? styles.peopleImage
+                    : null,
                 ]}
               />
-              <Text style={styles.resultText}>{item.name}</Text>
+              <View style={styles.resultDetails}>
+                <Text
+                  style={styles.resultText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {item.name}
+                </Text>
+                {selectedOption === "People" && (
+                  <TouchableOpacity style={styles.followButton}>
+                    <Ionicons
+                      name="person-add-outline"
+                      size={20}
+                      color="white"
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
-          numColumns={2}
+          numColumns={selectedOption === "People" ? 1 : 2} // People için tek sütun
           contentContainerStyle={styles.resultsList}
-          columnWrapperStyle={{ justifyContent: "space-between" }}
+          columnWrapperStyle={
+            selectedOption === "People"
+              ? null
+              : { justifyContent: "space-between" }
+          }
           onEndReached={loadMoreResults} // Kullanıcı liste sonuna ulaştığında çalışır
           onEndReachedThreshold={0.5} // Eşik değer
-          ListFooterComponent={
-            isLoading ? (
-              <Text style={styles.loadingText}>Loading...</Text>
-            ) : null
-          } // Yükleniyor göstergesi
         />
       </View>
     </View>
@@ -219,10 +271,10 @@ const styles = StyleSheet.create({
     backgroundColor: "black",
   },
   topContainer: {
-    backgroundColor: "#1E1E1E", // Arka plan farklı rengi
+    backgroundColor: "#1E1E1E",
     paddingTop: 20,
     paddingHorizontal: 20,
-    paddingBottom: 10, // Alt boşluk
+    paddingBottom: 10,
   },
   searchWrapper: {
     flexDirection: "row",
@@ -266,7 +318,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-start",
     marginTop: 10,
-    marginBottom: 0, // Alt boşluk eklendi
+    marginBottom: 0,
   },
   option: {
     paddingVertical: 5,
@@ -287,7 +339,7 @@ const styles = StyleSheet.create({
   },
   resultsContainer: {
     flex: 1,
-    backgroundColor: "black", // Farklı arka plan
+    backgroundColor: "black",
     paddingTop: 10,
   },
   resultsList: {
@@ -298,6 +350,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     flex: 1,
   },
+  defaultResultItem: {
+    flexDirection: "column",
+  },
+  resultDetails: {
+    flex: 1,
+    justifyContent: "space-between",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  peopleResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#444",
+  },
+  resultDetails: {
+    flex: 1,
+    marginLeft: 10,
+    justifyContent: "space-between",
+    flexDirection: "row",
+    alignItems: "center",
+  },
   image: {
     width: 150,
     height: 150,
@@ -307,9 +382,37 @@ const styles = StyleSheet.create({
   artistImage: {
     borderRadius: 100,
   },
+  peopleImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginBottom: 0,
+  },
+  peopleResultText: {
+    flex: 1,
+    color: "white",
+    fontSize: 16,
+  },
   resultText: {
     color: "white",
     fontSize: 14,
     textAlign: "center",
+    flexShrink: 1,
+  },
+  followButton: {
+    backgroundColor: "#444",
+    borderRadius: 5,
+    padding: 5,
+    marginLeft: 10,
+  },
+  loadingText: {
+    color: "white",
+    textAlign: "center",
+    marginVertical: 20,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#333",
+    marginVertical: 5,
   },
 });

@@ -6,7 +6,7 @@ import {
 } from "../constants/apiConstants";
 
 // Spotify'dan Access Token almak için Client Credentials Flow
-export const getAccessToken = async () => {
+const getAccessToken = async () => {
   const authParameters = {
     method: "POST",
     headers: {
@@ -31,7 +31,7 @@ export const getAccessToken = async () => {
 };
 
 // Spotify API üzerinden sanatçı aramak
-export const searchArtists = async (accessToken, query, offset = 0) => {
+const searchArtists = async (accessToken, query, offset = 0) => {
   const url = `https://api.spotify.com/v1/search?q=${query}&type=artist&limit=10&offset=${offset}`;
   const response = await fetch(url, {
     headers: {
@@ -43,7 +43,7 @@ export const searchArtists = async (accessToken, query, offset = 0) => {
 };
 
 // Spotify API üzerinden albüm aramak
-export const searchAlbums = async (accessToken, query, offset = 0) => {
+const searchAlbums = async (accessToken, query, offset = 0) => {
   const url = `https://api.spotify.com/v1/search?q=${query}&type=album&limit=10&offset=${offset}`;
   const response = await fetch(url, {
     headers: {
@@ -53,3 +53,5 @@ export const searchAlbums = async (accessToken, query, offset = 0) => {
   const data = await response.json();
   return data.albums.items;
 };
+
+export { getAccessToken, searchArtists, searchAlbums };

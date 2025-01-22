@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,55 +10,129 @@ import {
   ScrollView,
   Keyboard,
   TouchableWithoutFeedback,
+  Image,
+  Platform,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useRouter } from "expo-router";
+import { getUserProfile, updateUserProfile } from "../../../api/backend";
+import * as ImagePicker from "expo-image-picker";
 
 export default function AuthenticationSettings() {
   const router = useRouter();
 
+  // Kullanıcı profili durumu
   const [profile, setProfile] = useState({
-    name: "",
-    familyName: "",
-    email: "",
-    location: "",
-    pronoun: "",
+    username: "",
+    description: "",
     bio: "",
-    spotifyLink: "",
+    link: "",
+    location: "",
+    profileImage: "",
   });
 
-  const handleSaveProfile = () => {
-    const { name, familyName, email } = profile;
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState(null);
 
-    // Basic validation
-    if (!name || !familyName || !email) {
-      Alert.alert("Error", "Name, Family Name, and Email are required.");
-      return;
+  // Kullanıcı profilini çek
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const data = await getUserProfile(1); // ID'si 1 olan kullanıcı
+        setProfile({
+          username: data.username || "",
+          description: data.description || "",
+          bio: data.bio || "",
+          link: data.link || "",
+          location: data.location || "",
+          profileImage: data.profileImage || "",
+        });
+      } catch (error) {
+        Alert.alert("Error", "Failed to fetch profile data");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  // Kamera ve Galeri izinleri
+  const requestPermissions = async () => {
+    const { status: cameraStatus } =
+      await ImagePicker.requestCameraPermissionsAsync();
+    const { status: galleryStatus } =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (cameraStatus !== "granted" || galleryStatus !== "granted") {
+      Alert.alert(
+        "Permission Required",
+        "Camera and gallery access is required to upload a profile picture."
+      );
+      return false;
     }
-
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
-      Alert.alert("Error", "Please enter a valid email address.");
-      return;
-    }
-
-    Alert.alert("Profile Saved", "Your profile has been updated.");
+    return true;
   };
 
-  const handleSpotifyLink = () => {
+  // Profil resmi seçme veya çekme
+  const handleProfileImage = async () => {
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
     Alert.alert(
-      "Spotify Integration",
-      "This will link your Spotify account to your profile.",
+      "Profile Picture",
+      "Choose an option",
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Link",
-          onPress: () => setProfile({ ...profile, spotifyLink: "Linked" }),
-        },
-      ]
+        { text: "Cancel", style: "cancel" },
+        { text: "Take Photo", onPress: handleTakePhoto },
+        { text: "Choose from Library", onPress: handleChooseFromLibrary },
+      ],
+      { cancelable: true }
     );
+  };
+
+  const handleTakePhoto = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setProfile((prev) => ({ ...prev, profileImage: result.assets[0].uri }));
+    }
+  };
+
+  const handleChooseFromLibrary = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setProfile((prev) => ({ ...prev, profileImage: result.assets[0].uri }));
+    }
+  };
+
+  // Profil bilgilerini ve fotoğrafı kaydet
+  const handleSaveProfile = async () => {
+    try {
+      // Seçilen fotoğrafın URI'sini doğrudan profile.profileImage'e ata
+      if (selectedImage) {
+        setProfile((prev) => ({ ...prev, profileImage: selectedImage.uri }));
+      }
+
+      // Profil bilgileri güncellemesi
+      await updateUserProfile(1, profile); // ID'si 1 olan kullanıcı
+
+      Alert.alert("Success", "Profile updated successfully!");
+    } catch (error) {
+      console.error("Update Error:", error);
+      Alert.alert("Error", "Failed to update profile");
+    }
   };
 
   return (
@@ -72,51 +146,53 @@ export default function AuthenticationSettings() {
             <Text style={styles.header}>Profile Management</Text>
           </View>
 
-          {/* Profile Form */}
           <View style={styles.formContainer}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.name}
-              placeholder="Enter your name"
-              onChangeText={(text) => setProfile({ ...profile, name: text })}
-            />
+            {/* Profil Resmi */}
+            <TouchableOpacity onPress={handleProfileImage}>
+              {selectedImage ? (
+                <Image
+                  source={{ uri: selectedImage.uri }}
+                  style={styles.profileImage}
+                />
+              ) : profile.profileImage ? (
+                <Image
+                  source={{ uri: profile.profileImage }}
+                  style={styles.profileImage}
+                />
+              ) : (
+                <View style={styles.placeholderImage}>
+                  <Ionicons
+                    name="person-circle-outline"
+                    size={100}
+                    color="gray"
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
 
-            <Text style={styles.label}>Family Name</Text>
+            {/* Username */}
+            <Text style={styles.label}>Username</Text>
             <TextInput
               style={styles.input}
-              value={profile.familyName}
-              placeholder="Enter your family name"
+              value={profile.username}
+              placeholder="Enter your username"
               onChangeText={(text) =>
-                setProfile({ ...profile, familyName: text })
+                setProfile({ ...profile, username: text })
               }
             />
 
-            <Text style={styles.label}>Email</Text>
+            {/* Description */}
+            <Text style={styles.label}>Description</Text>
             <TextInput
               style={styles.input}
-              value={profile.email}
-              placeholder="Enter your email"
-              keyboardType="email-address"
-              onChangeText={(text) => setProfile({ ...profile, email: text })}
+              value={profile.description}
+              placeholder="Enter your description"
+              onChangeText={(text) =>
+                setProfile({ ...profile, description: text })
+              }
             />
 
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.location}
-              placeholder="Enter your location"
-              onChangeText={(text) => setProfile({ ...profile, location: text })}
-            />
-
-            <Text style={styles.label}>Pronoun</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.pronoun}
-              placeholder="Enter your pronoun (e.g., He/Him)"
-              onChangeText={(text) => setProfile({ ...profile, pronoun: text })}
-            />
-
+            {/* Bio */}
             <Text style={styles.label}>Bio</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
@@ -125,26 +201,35 @@ export default function AuthenticationSettings() {
               multiline
               onChangeText={(text) => setProfile({ ...profile, bio: text })}
             />
+
+            {/* Link */}
+            <Text style={styles.label}>Link</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.link}
+              placeholder="Enter your link"
+              onChangeText={(text) => setProfile({ ...profile, link: text })}
+            />
+
+            {/* Location */}
+            <Text style={styles.label}>Location</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.location}
+              placeholder="Enter your location"
+              onChangeText={(text) =>
+                setProfile({ ...profile, location: text })
+              }
+            />
+
+            {/* Save Button */}
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={handleSaveProfile}
+            >
+              <Text style={styles.saveButtonText}>Save Updates</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Spotify Link Button */}
-          <TouchableOpacity
-            style={styles.spotifyButton}
-            onPress={handleSpotifyLink}
-          >
-            <Ionicons name="checkmark-circle" size={24} color="white" />
-            <Text style={styles.spotifyButtonText}>
-              {profile.spotifyLink ? "Spotify Linked" : "Link Spotify"}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Save Button */}
-          <TouchableOpacity
-            style={styles.saveButton}
-            onPress={handleSaveProfile}
-          >
-            <Text style={styles.saveButtonText}>Save Updates</Text>
-          </TouchableOpacity>
         </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
@@ -168,6 +253,12 @@ const styles = StyleSheet.create({
     color: "white",
     marginLeft: 10,
   },
+  loadingText: {
+    textAlign: "center",
+    fontSize: 18,
+    color: "white",
+    marginTop: 50,
+  },
   formContainer: {
     marginBottom: 20,
   },
@@ -187,20 +278,6 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: "top",
   },
-  spotifyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1DB954",
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  spotifyButtonText: {
-    color: "white",
-    fontSize: 16,
-    marginLeft: 10,
-  },
   saveButton: {
     backgroundColor: "#1DB954",
     padding: 15,
@@ -210,5 +287,22 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     textAlign: "center",
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  placeholderImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#444",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+    marginBottom: 20,
   },
 });

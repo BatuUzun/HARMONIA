@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useRouter, Tabs } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import { searchPeople } from "./api/backend";
 
 export default function Layout() {
   const router = useRouter();
@@ -8,6 +9,22 @@ export default function Layout() {
   // İlk açılışta Home'a yönlendirme
   useEffect(() => {
     router.replace("Screens/Home/Feed");
+  }, []);
+
+  // Backend API Bağlantı Testi
+  useEffect(() => {
+    const testSearchAPI = async () => {
+      try {
+        console.log("🔄 Backend API bağlantı testi başlatılıyor...");
+        const response = await searchPeople("test_user");
+        console.log("✅ Backend API başarılı:", response);
+      } catch (error) {
+        console.error("❌ Backend API hatası:", error.message);
+        console.error("🔍 Hata Detayı:", error.response?.data || error.message);
+      }
+    };
+
+    testSearchAPI();
   }, []);
 
   return (
@@ -38,13 +55,13 @@ export default function Layout() {
 
           return <Ionicons name={iconName} size={28} color={color} />;
         },
-        tabBarShowLabel: false, // İkonların altındaki title yazılarını kaldır
+        tabBarShowLabel: false,
         tabBarActiveTintColor: "white",
         tabBarInactiveTintColor: "gray",
         tabBarStyle: {
           backgroundColor: "#1E1E1E",
           height: 90,
-          paddingTop: 10, 
+          paddingTop: 10,
           paddingBottom: 10,
         },
       })}
