@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   View,
   Text,
@@ -17,9 +17,11 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { getUserProfile, updateUserProfile } from "../../api/backend";
 import * as ImagePicker from "expo-image-picker";
+import { AuthContext } from "../../context/AuthContext";
 
 export default function AuthenticationSettings() {
   const router = useRouter();
+  const { userId } = useContext(AuthContext); // Get userId from AuthContext
 
   // Kullanıcı profili durumu
   const [profile, setProfile] = useState({
@@ -38,7 +40,7 @@ export default function AuthenticationSettings() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const data = await getUserProfile(1); // ID'si 1 olan kullanıcı
+        const data = await getUserProfile(userId);
         setProfile({
           username: data.username || "",
           description: data.description || "",
@@ -126,7 +128,7 @@ export default function AuthenticationSettings() {
       }
 
       // Profil bilgileri güncellemesi
-      await updateUserProfile(1, profile); // ID'si 1 olan kullanıcı
+      await updateUserProfile(userId, profile); // ID'si 1 olan kullanıcı
 
       Alert.alert("Success", "Profile updated successfully!");
     } catch (error) {
