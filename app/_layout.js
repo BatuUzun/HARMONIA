@@ -1,32 +1,46 @@
-import React, { useEffect } from "react";
-import { useRouter, Tabs } from "expo-router";
+// app > _layout.js
+import React, { useContext, useEffect } from "react";
+import { useRouter, Tabs, Stack } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { searchPeople } from "./api/backend";
+import { AuthProvider, AuthContext } from "./context/AuthContext";
 
-export default function Layout() {
+// Wrap the entire app with AuthProvider
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <Layout />
+    </AuthProvider>
+  );
+}
+
+// Main Layout component
+function Layout() {
   const router = useRouter();
+  const { isAuthenticated } = useContext(AuthContext);
 
-  // İlk açılışta Home'a yönlendirme
   useEffect(() => {
-    router.replace("Screens/Home/Feed");
-  }, []);
+    if (!isAuthenticated) {
+      router.replace("/Screens/Auth");
+    }
+  }, [isAuthenticated]);
 
-  // Backend API Bağlantı Testi
-  useEffect(() => {
-    const testSearchAPI = async () => {
-      try {
-        console.log("🔄 Backend API bağlantı testi başlatılıyor...");
-        const response = await searchPeople("test_user");
-        console.log("✅ Backend API başarılı:", response);
-      } catch (error) {
-        console.error("❌ Backend API hatası:", error.message);
-        console.error("🔍 Hata Detayı:", error.response?.data || error.message);
-      }
-    };
+  if (!isAuthenticated) {
+    // Show authentication stack (without bottom navigation)
+    return (
+      <Stack>
+        <Stack.Screen
+          name="Screens/Auth/index"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Screens/Auth/SignUp"
+          options={{ headerShown: false }}
+        />
+      </Stack>
+    );
+  }
 
-    testSearchAPI();
-  }, []);
-
+  // Show tabs (with bottom navigation) if authenticated
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -85,6 +99,12 @@ export default function Layout() {
       <Tabs.Screen
         name="Screens/Profile/Profile/index"
         options={{ title: "Profile" }}
+      />
+      <Tabs.Screen name="Screens/Auth/index" options={{ href: null }} />
+      <Tabs.Screen name="Screens/Auth/SignUp" options={{ href: null }} />
+      <Tabs.Screen
+        name="Screens/AuthenticationSettings/index"
+        options={{ href: null }}
       />
     </Tabs>
   );

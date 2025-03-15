@@ -54,4 +54,86 @@ const searchAlbums = async (accessToken, query, offset = 0) => {
   return data.albums.items;
 };
 
-export { getAccessToken, searchArtists, searchAlbums };
+const getTop50GlobalPlaylist = async (accessToken) => {
+  const playlistId = "4i96DEnCkGkhBRcI9SYuc4";
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Spotify API Error: ${response.status} ${response.statusText}`
+      );
+    }
+    const data = await response.json();
+    console.log("Spotify API Response:", JSON.stringify(data, null, 2)); // Log the full response
+    return data.items;
+  } catch (error) {
+    console.error("Error in getTop50GlobalPlaylist:", error);
+    throw error;
+  }
+};
+
+const getArtistDetails = async (accessToken, artistId) => {
+  const url = `https://api.spotify.com/v1/artists/${artistId}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await response.json();
+  return data;
+};
+
+const getTopArtistsByPopularity = async (accessToken) => {
+  try {
+    const tracks = await getTop50GlobalPlaylist(accessToken);
+
+    if (!tracks || !Array.isArray(tracks)) {
+      throw new Error("Invalid tracks data received from Spotify API");
+    }
+
+    // Benzersiz sanatçı ID'lerini çek
+    const artistIds = [
+      ...new Set(
+        tracks.map((item) => item.track?.artists?.[0]?.id).filter(Boolean)
+      ),
+    ].slice(0, 20); // İlk 20 sanatçıyı al
+
+    if (artistIds.length === 0) return [];
+
+    // **Tek istekte birden fazla sanatçı çekmek için**
+    const url = `https://api.spotify.com/v1/artists?ids=${artistIds.join(",")}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Spotify API Error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+
+    // Sanatçıları popülerliğe göre sırala ve ilk 10'u al
+    return data.artists
+      .sort((a, b) => b.popularity - a.popularity)
+      .slice(0, 10);
+  } catch (error) {
+    console.error("Error in getTopArtistsByPopularity:", error);
+    return [];
+  }
+};
+
+export {
+  getAccessToken,
+  searchArtists,
+  searchAlbums,
+  getTop50GlobalPlaylist,
+  getArtistDetails,
+  getTopArtistsByPopularity,
+};

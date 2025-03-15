@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useRouter } from "expo-router";
-import { getUserProfile, updateUserProfile } from "../../../api/backend";
+import { getUserProfile, updateUserProfile } from "../../api/backend";
 import * as ImagePicker from "expo-image-picker";
 
 export default function AuthenticationSettings() {

@@ -1,11 +1,10 @@
 import axios from "axios";
-
-const API_GATEWAY_URL = "http://192.168.0.27:8765";
+import { BACKEND_PROFILE_API_URL, BACKEND_SEARCH_PROFILE_URL } from "../constants/apiConstants";
 
 const searchPeople = async (username) => {
   try {
     const response = await axios.post(
-      `${API_GATEWAY_URL}/search-profile/search`,
+      `${BACKEND_SEARCH_PROFILE_URL}/search-profile/search`,
       null,
       {
         params: { username },
@@ -26,7 +25,7 @@ const searchPeople = async (username) => {
 const getUserProfile = async (id) => {
   try {
     const response = await axios.get(
-      `${API_GATEWAY_URL}/profile-api/get-user-profile/${id}`
+      `${BACKEND_PROFILE_API_URL}/profile-api/get-user-profile/${id}`
     );
     console.log("✅ Fetch User Profile Response:", response.data);
     return response.data;
@@ -43,7 +42,7 @@ const getUserProfile = async (id) => {
 const updateUserProfile = async (id, profileData) => {
   try {
     const response = await axios.put(
-      `${API_GATEWAY_URL}/profile-api/update-profile/${id}`,
+      `${BACKEND_PROFILE_API_URL}/profile-api/update-profile/${id}`,
       profileData
     );
     console.log("✅ Update User Profile Response:", response.data);
