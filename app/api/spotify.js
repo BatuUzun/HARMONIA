@@ -129,6 +129,34 @@ const getTopArtistsByPopularity = async (accessToken) => {
   }
 };
 
+export const getArtistAlbums = async (artistId) => {
+  const url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album&limit=20`;
+  const accessToken = await getAccessToken();
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await response.json();
+  return data.items;
+};
+
+export const getAlbumTracks = async (albumId) => {
+  const url = `https://api.spotify.com/v1/albums/${albumId}/tracks`;
+  const accessToken = await getAccessToken();
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await response.json();
+  return data.items;
+};
+
 export {
   getAccessToken,
   searchArtists,

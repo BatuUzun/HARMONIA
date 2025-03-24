@@ -1133,6 +1133,40 @@ export default function ProfileScreen() {
         animationType="slide"
         transparent={true}
       >
+        {/* Reviews Modal (İpek'in çözümü gesture için)*/}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => {
+            setModalVisible(!modalVisible);
+          }}
+        >
+          <View style={styles.centeredView}>
+            <View style={styles.modalView}>
+              <Text style={styles.modalText}>
+                Are you sure you want to delete your review?
+              </Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonYes]}
+                  onPress={() => {
+                    handleDeleteReview(selectedReviewId); // Review'u sil
+                    setModalVisible(false); // Modal'ı kapat
+                  }}
+                >
+                  <Text style={styles.textStyle}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonNo]}
+                  onPress={() => setModalVisible(!modalVisible)}
+                >
+                  <Text style={styles.textStyle}>No</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
         <View style={styles.modalBackground}>
           <View style={styles.reviewModal}>
             <View style={styles.modalHeader}>

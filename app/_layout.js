@@ -94,7 +94,7 @@ function Layout() {
       />
       <Tabs.Screen
         name="Screens/Activity/Main/index"
-        options={{ title: "Activity" }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="Screens/Profile/Profile/index"
@@ -104,6 +104,10 @@ function Layout() {
       <Tabs.Screen name="Screens/Auth/SignUp" options={{ href: null }} />
       <Tabs.Screen
         name="Screens/AuthenticationSettings/index"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="Screens/Profile/ArtistProfile/index"
         options={{ href: null }}
       />
     </Tabs>

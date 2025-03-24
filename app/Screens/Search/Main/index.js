@@ -14,6 +14,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { useNavigation } from "@react-navigation/native";
+import { createStackNavigator } from "@react-navigation/stack"; // Import Stack Navigator
 import {
   getAccessToken,
   searchArtists,
@@ -21,8 +22,23 @@ import {
   getTopArtistsByPopularity,
 } from "../../../api/spotify";
 import { searchPeople } from "../../../api/backend";
+import ArtistProfile from "../../Profile/ArtistProfile/index";
 
-export default function SearchScreen() {
+// Create a Stack Navigator for the SearchScreen
+const Stack = createStackNavigator();
+
+// Wrap the SearchScreen in a Stack Navigator
+export default function SearchStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="SearchMain" component={SearchScreen} />
+      <Stack.Screen name="ArtistProfile" component={ArtistProfile} />
+    </Stack.Navigator>
+  );
+}
+
+// Main SearchScreen component
+function SearchScreen() {
   const navigation = useNavigation();
   const [isFocused, setIsFocused] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -199,18 +215,31 @@ export default function SearchScreen() {
     }
   };
 
-  const handleAlbumClick = (album) => {
-    saveSearchQuery(album.name);
-    navigation.navigate("Screens/Review/Entry/index", { selectedAlbum: album });
-  };
-
   const handleRecentSearchClick = (query) => {
     setSearchText(query);
     handleSearch(query);
   };
 
+  const handleAlbumClick = (album) => {
+    saveSearchQuery(album.name);
+    navigation.navigate("Screens/Review/Entry/index", { selectedAlbum: album });
+  };
+
   const handleUserClick = (user) => {
-    navigation.navigate("Screens/Profile/Profile/index", { userId: user.id }); // Navigate to ProfileScreen with user ID
+    navigation.navigate("Screens/Profile/Profile/index", { userId: user.id });
+  };
+
+  const handleArtistClick = (artist) => {
+    console.log("Artist Data:", artist); // Log the artist object
+    console.log("Artist ID:", artist.id); // Log the artist ID
+    console.log("Artist Name:", artist.name); // Log the artist name
+    console.log("Artist Image:", artist.images?.[0]?.url); // Log the artist image URL
+
+    navigation.navigate("ArtistProfile", {
+      artistId: artist.id,
+      artistName: artist.name,
+      artistImage: artist.images?.[0]?.url || null,
+    });
   };
 
   return (
@@ -294,7 +323,10 @@ export default function SearchScreen() {
             {topArtists.length === 5 && (
               <>
                 <View style={styles.centerArtist}>
-                  <TouchableOpacity style={styles.artistItem}>
+                  <TouchableOpacity
+                    style={styles.artistItem}
+                    onPress={() => handleArtistClick(topArtists[0])}
+                  >
                     <View style={styles.crownContainer}>
                       <MaterialCommunityIcons
                         name="crown"
@@ -312,14 +344,20 @@ export default function SearchScreen() {
                 </View>
 
                 <View style={styles.row}>
-                  <TouchableOpacity style={styles.artistItem}>
+                  <TouchableOpacity
+                    style={styles.artistItem}
+                    onPress={() => handleArtistClick(topArtists[1])}
+                  >
                     <Image
                       source={{ uri: topArtists[1].images[0]?.url }}
                       style={styles.artistImage}
                     />
                     <Text style={styles.artistText}>{topArtists[1].name}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.artistItem}>
+                  <TouchableOpacity
+                    style={styles.artistItem}
+                    onPress={() => handleArtistClick(topArtists[2])}
+                  >
                     <Image
                       source={{ uri: topArtists[2].images[0]?.url }}
                       style={styles.artistImage}
@@ -329,14 +367,20 @@ export default function SearchScreen() {
                 </View>
 
                 <View style={styles.row}>
-                  <TouchableOpacity style={styles.artistItem}>
+                  <TouchableOpacity
+                    style={styles.artistItem}
+                    onPress={() => handleArtistClick(topArtists[3])}
+                  >
                     <Image
                       source={{ uri: topArtists[3].images[0]?.url }}
                       style={styles.artistImage}
                     />
                     <Text style={styles.artistText}>{topArtists[3].name}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.artistItem}>
+                  <TouchableOpacity
+                    style={styles.artistItem}
+                    onPress={() => handleArtistClick(topArtists[4])}
+                  >
                     <Image
                       source={{ uri: topArtists[4].images[0]?.url }}
                       style={styles.artistImage}
@@ -391,7 +435,9 @@ export default function SearchScreen() {
                   if (selectedOption === "Albums") {
                     handleAlbumClick(item);
                   } else if (selectedOption === "People") {
-                    handleUserClick(item); // Navigate to ProfileScreen
+                    handleUserClick(item);
+                  } else if (selectedOption === "Artists") {
+                    handleArtistClick(item);
                   }
                 }}
                 style={[
