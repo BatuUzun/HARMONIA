@@ -45,7 +45,16 @@ export default function ProfileScreen() {
   const { logout } = useContext(AuthContext); // Add logout from AuthContext
   const { userId: loggedInUserId } = useContext(AuthContext); // Get logged-in user ID from AuthContext
   const { userId } = useLocalSearchParams(); // Get userId from navigation params
-  const [currentUserId, setCurrentUserId] = useState(userId || loggedInUserId);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
+
+  useEffect(() => {
+    if (userId) {
+      setCurrentUserId(userId);
+    } else {
+      setCurrentUserId(loggedInUserId);
+    }
+  }, [userId, loggedInUserId]);
 
   useEffect(() => {
     if (currentUserId) {
@@ -70,6 +79,7 @@ export default function ProfileScreen() {
   const [accessToken, setAccessToken] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("albums");
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [isFollowing, setIsFollowing] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false); // Profil yenileme state
   const [reviewsRefreshing, setReviewsRefreshing] = useState(false); // Reviews modal yenileme state
@@ -88,28 +98,6 @@ export default function ProfileScreen() {
   const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ALBUM_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ARTIST_API_URL = "https://api.spotify.com/v1/artists";
-
-  // Logout Functionality
-  const handleLogout = async () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to log out?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Logout",
-          onPress: async () => {
-            logout(); // Clear token and update authentication state
-            router.replace("/Screens/Auth"); // Navigate to login screen
-          },
-        },
-      ],
-      { cancelable: false }
-    );
-  };
 
   // Spotify Access Token Alma
   const fetchSpotifyAccessToken = async () => {
@@ -437,24 +425,17 @@ export default function ProfileScreen() {
       const favoriteAlbumsData = images.filter((fav) => fav.type === "album");
       const favoriteArtistsData = images.filter((fav) => fav.type === "artist");
 
-      setProfile((prevProfile) => ({
-        ...prevProfile,
+      setProfile({
         username: userData.username || "Unknown",
         bio: userData.bio || "No bio available",
         location: userData.location || "Unknown location",
         link: userData.link || "Unknown link",
-        profileImage:
-          userData.profileImage ||
-          "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-        favoriteAlbums:
-          favoriteAlbumsData.length > 0
-            ? favoriteAlbumsData
-            : prevProfile.favoriteAlbums,
+        profileImage: userData.profileImage || defaultProfileImage,
+
+        favoriteAlbums: favoriteAlbumsData.length > 0 ? favoriteAlbumsData : [],
         favoriteArtists:
-          favoriteArtistsData.length > 0
-            ? favoriteArtistsData
-            : prevProfile.favoriteArtists,
-      }));
+          favoriteArtistsData.length > 0 ? favoriteArtistsData : [],
+      });
 
       console.log("✅ Güncellenmiş profil state:", profile);
     } catch (error) {
@@ -700,10 +681,10 @@ export default function ProfileScreen() {
   const fetchFollowCounts = async () => {
     try {
       const followerResponse = await axios.get(
-        `${BACKEND_USER_FOLLOW_URL}/user-follow/follower-count?userProfileId=${currentUserId}` // Use currentUserId
+        `${BACKEND_USER_FOLLOW_URL}/user-follow/follower-count?userProfileId=${currentUserId}`
       );
       const followingResponse = await axios.get(
-        `${BACKEND_USER_FOLLOW_URL}/user-follow/following-count?userProfileId=${currentUserId}` // Use currentUserId
+        `${BACKEND_USER_FOLLOW_URL}/user-follow/following-count?userProfileId=${currentUserId}`
       );
 
       console.log("📥 Follower Count Response:", followerResponse.data);
@@ -820,7 +801,7 @@ export default function ProfileScreen() {
             )}
 
             <View style={styles.reviewContent}>
-              <Text style={styles.userName}>
+              <Text style={styles.usernameReview}>
                 {review.albumName || `User ${review.spotifyId}`}
               </Text>
               <Text style={styles.reviewDate}>
@@ -872,33 +853,30 @@ export default function ProfileScreen() {
         }
         ListHeaderComponent={
           <>
-            <View style={styles.header}>
-              <Text style={styles.headerText}>Profile</Text>
-              <View style={styles.headerIcons}>
-                <TouchableOpacity
-                  style={styles.settingsButton}
-                  onPress={() => router.push("Screens/AuthenticationSettings")}
-                >
-                  <Ionicons name="settings-outline" size={24} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleLogout}
-                  style={styles.logoutButton}
-                >
-                  <Ionicons name="log-out-outline" size={24} color="white" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => router.push("Screens/AuthenticationSettings")}
+            >
+              <Ionicons name="settings-outline" size={24} color="white" />
+            </TouchableOpacity>
             <View style={styles.profileInfoContainer}>
-              {profile.profileImage ? (
-                <Image
-                  source={{ uri: profile.profileImage }}
-                  style={styles.profileImage}
-                />
-              ) : (
-                <Ionicons name="person-circle-outline" size={80} color="gray" />
-              )}
+              <View style={styles.profileImageContainer}>
+                {profile.profileImage &&
+                profile.profileImage !== "default.png" &&
+                profile.profileImage !== null ? (
+                  <Image
+                    source={{ uri: profile.profileImage }}
+                    style={styles.profileImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Image
+                    source={defaultProfileImage}
+                    style={styles.profileImage}
+                    resizeMode="cover"
+                  />
+                )}
+              </View>
               <View style={styles.statsContainer}>
                 <TouchableOpacity
                   style={styles.statItem}
@@ -931,20 +909,30 @@ export default function ProfileScreen() {
             </View>
 
             {/* ✅ Bio ve Location Alanı */}
-            <View style={styles.bioContainer}>
-              <Text style={styles.username}>{profile.username}</Text>
-              <Text style={styles.bio}>{profile.bio}</Text>
-              <View style={styles.locationLinkContainer}>
-                <Text style={styles.location}>
-                  <Ionicons name="location-outline" size={16} color="gray" />{" "}
-                  {profile.location}
-                </Text>
-                <Text style={styles.separator1}> | </Text>
-                <Text style={styles.link}>
-                  <Ionicons name="link-outline" size={16} color="gray" />{" "}
-                  {profile.link}
-                </Text>
+            <View style={styles.userInfoContainer}>
+              <View style={styles.usernameContainer}>
+                <Text style={styles.username}>{profile.username}</Text>
+                {currentUserId !== loggedInUserId && (
+                  <TouchableOpacity
+                    style={[styles.followButton, { marginLeft: 15 }]}
+                    onPress={() => handleFollow()}
+                  >
+                    <Text style={styles.followButtonText}>
+                      {isFollowing ? "Unfollow" : "Follow"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
+
+              <Text style={styles.bio}>{profile.bio}</Text>
+              <Text style={styles.location}>
+                <Ionicons name="location-outline" size={16} color="gray" />{" "}
+                {profile.location}
+              </Text>
+              <Text style={styles.link}>
+                <Ionicons name="link-outline" size={16} color="gray" />{" "}
+                {profile.link}
+              </Text>
             </View>
 
             {/* ✅ Favorite Albums */}
@@ -1205,7 +1193,7 @@ export default function ProfileScreen() {
               <Text
                 style={{ color: "gray", textAlign: "center", marginTop: 10 }}
               >
-                Henüz bir review yok.
+                There are no reviews yet.
               </Text>
             )}
           </View>
@@ -1288,22 +1276,28 @@ export default function ProfileScreen() {
 // Stil Tanımları
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "black" },
-
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 15,
   },
   headerText: { fontSize: 24, color: "white" },
-
   profileInfoContainer: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 10,
-    marginTop: 20,
+    paddingHorizontal: 0,
+    marginTop: 50,
   },
-  profileImage: { width: 90, height: 90, borderRadius: 50, marginRight: 10 },
-
+  profileImage: {
+    left: 20,
+    width: 90,
+    height: 90,
+    borderRadius: 50,
+    marginRight: 10,
+    borderWidth: 1, // Border ekliyoruz
+    borderColor: "#1DB954", // Spotify yeşiline uyumlu bir renk
+  },
   statsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1313,8 +1307,9 @@ const styles = StyleSheet.create({
   },
 
   statItem: {
+    bottom: 10,
     alignItems: "center",
-    marginHorizontal: 10,
+    right: 50,
   },
 
   statNumber: {
@@ -1328,26 +1323,29 @@ const styles = StyleSheet.create({
     color: "gray",
   },
 
-  bioContainer: { marginLeft: 15 },
+  bioContainer: { marginLeft: 25 },
 
   username: {
     fontSize: 18,
     fontWeight: "bold",
     color: "white",
-    marginVertical: 15,
   },
-  bio: { fontSize: 14, color: "white", marginVertical: 5 },
 
+  bio: { fontSize: 14, color: "white", marginVertical: 5 },
+  userInfoContainer: {
+    alignItems: "row",
+    marginBottom: 10,
+    paddingHorizontal: 25,
+  },
   locationLinkContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 5,
   },
-  location: { fontSize: 14, color: "white" },
+  location: { fontSize: 14, color: "white", marginRight: 15 },
   link: { fontSize: 14, color: "#1DB954" },
-  separator1: { fontSize: 14, color: "gray", marginHorizontal: 5 },
 
-  separator: { height: 1, backgroundColor: "gray", marginVertical: 20 },
+  separator: { height: 1, backgroundColor: "#333333", marginVertical: 15 },
 
   favoriteTitle: {
     fontSize: 18,
@@ -1357,17 +1355,18 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around", // Her iki tarafta da eşit boşluk bırakır.
     flexWrap: "wrap",
-    marginVertical: 10,
+    marginVertical: 5,
+    paddingHorizontal: 10,
   },
   albumContainer: {
-    width: "23%", // Albümlerin genişliği, 4'lü sığacak şekilde ayarlanır
-    marginBottom: 10, // Albümler arası boşluk
+    width: 90,
+    marginBottom: 10,
   },
   artistContainer: {
-    width: "23%", // Albümlerin genişliği, 4'lü sığacak şekilde ayarlanır
-    marginBottom: 10, // Albümler arası boşluk
+    width: 90,
+    marginBottom: 10,
   },
   album: {
     width: 90,
@@ -1467,11 +1466,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
   },
-
-  container: {
-    flex: 1,
-    backgroundColor: "black",
-  },
   loader: {
     flex: 1,
     justifyContent: "center",
@@ -1526,7 +1520,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
   },
-  userName: {
+  usernameReview: {
     fontSize: 16,
     fontWeight: "bold",
     color: "white",
@@ -1704,5 +1698,42 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     marginLeft: 10,
+  },
+  settingsButton: {
+    position: "absolute",
+    top: 0, // Sağ üst köşeye yerleştirildi
+    right: 0,
+    padding: 15,
+    zIndex: 10,
+  },
+  profileImageContainer: {
+    alignItems: "center", // Profil resmi ve nick'i ortalar
+    flexDirection: "column",
+    marginBottom: 20,
+  },
+  followButton: {
+    backgroundColor: "#1DB954", // Spotify yeşili
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 15,
+    marginLeft: 10,
+    alignSelf: "center", // Butonun kendini ortalaması
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+
+  followButtonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  usernameContainer: {
+    flexDirection: "row",
+    alignItems: "center", // Nick ve butonu aynı hizada tutar
+    justifyContent: "flex-start", // İkisini yatayda ayırır
+    width: "100%",
   },
 });

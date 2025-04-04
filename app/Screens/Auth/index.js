@@ -28,7 +28,6 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    // Validate email and password
     if (!validateEmail(email)) {
       Alert.alert("Error", "Please enter a valid email address.");
       return;
@@ -58,11 +57,18 @@ export default function Login() {
       const result = await response.json();
       if (response.ok) {
         console.log("Login successful:", result);
-        if (!result.token || !result.userId) {
-          throw new Error("Token or userId not received from server");
+
+        if (!result.isVerified) {
+          // Kullanıcı doğrulanmamışsa VerificationSettings ekranına yönlendir
+          router.replace({
+            pathname: "/Screens/Auth/VerificationSettings",
+            params: { email, password },
+          });
+        } else {
+          // Kullanıcı doğrulanmışsa Home ekranına yönlendir
+          await login(result.token, result.userId);
+          router.replace("Screens/Home/Feed"); //todo
         }
-        await login(result.token, result.userId); // Pass userId to login
-        router.replace("Screens/Home/Feed"); // Redirect to home page
       } else {
         const error = await response.text();
         console.error("Login error:", error);
@@ -98,8 +104,6 @@ export default function Login() {
           secureTextEntry
           autoCapitalize="none"
         />
-
-        
 
         {/* Login Button */}
         <TouchableOpacity style={styles.button} onPress={handleLogin}>

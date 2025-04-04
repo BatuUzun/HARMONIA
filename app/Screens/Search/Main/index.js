@@ -9,6 +9,7 @@ import {
   Image,
   Keyboard,
   ActivityIndicator,
+  TouchableWithoutFeedback,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -49,7 +50,7 @@ function SearchScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState([]);
   const [topArtists, setTopArtists] = useState([]);
-
+  const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
   const options = ["Artists", "Albums", "People"];
 
   useEffect(() => {
@@ -121,17 +122,19 @@ function SearchScreen() {
         const peopleResults = await searchPeople(text);
         const bucketUrl = "https://harmonia-profile-images.s3.amazonaws.com";
 
-        results = peopleResults.map((person) => ({
-          id: person.id,
-          name: person.username,
-          images: [
-            {
-              url: person.profileImage?.startsWith("http")
-                ? person.profileImage
-                : `${bucketUrl}/${person.profileImage}`,
-            },
-          ],
-        }));
+        results = peopleResults.map((person) => {
+          const imageUrl = person.profileImage;
+          const finalImageUrl =
+            imageUrl && imageUrl !== "default.png" && imageUrl !== null
+              ? imageUrl
+              : Image.resolveAssetSource(defaultProfileImage).uri;
+
+          return {
+            id: person.id,
+            name: person.username,
+            images: [{ url: finalImageUrl }],
+          };
+        });
       }
 
       setSearchResults(loadMore ? [...searchResults, ...results] : results);
@@ -243,269 +246,287 @@ function SearchScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.topContainer}>
-        <View style={styles.searchWrapper}>
-          <View
-            style={[
-              styles.searchContainer,
-              isFocused && styles.searchContainerFocused,
-            ]}
-          >
-            <Ionicons
-              name="search-outline"
-              size={24}
-              color={isFocused ? "white" : "gray"}
-              style={styles.icon}
-            />
-            <TextInput
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.container}>
+        <View style={styles.topContainer}>
+          <View style={styles.searchWrapper}>
+            <View
               style={[
-                styles.input,
-                isFocused && { color: "white", backgroundColor: "#444" },
+                styles.searchContainer,
+                isFocused && styles.searchContainerFocused,
               ]}
-              placeholder="Find artists, albums, people..."
-              placeholderTextColor="gray"
-              value={searchText}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => !searchText && setIsFocused(false)}
-              onChangeText={(text) => {
-                setSearchText(text);
-                handleSearch(text);
-              }}
-              returnKeyType="search"
-            />
-            {searchText.length > 0 && (
+            >
+              <Ionicons
+                name="search-outline"
+                size={24}
+                color={isFocused ? "white" : "gray"}
+                style={styles.icon}
+              />
+              <TextInput
+                style={[
+                  styles.input,
+                  isFocused && { color: "white", backgroundColor: "#444" },
+                ]}
+                placeholder="Find artists, albums, people..."
+                placeholderTextColor="gray"
+                value={searchText}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => !searchText && setIsFocused(false)}
+                onChangeText={(text) => {
+                  setSearchText(text);
+                  handleSearch(text);
+                }}
+                returnKeyType="search"
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchText("")}
+                  style={styles.clearButton}
+                >
+                  <Ionicons name="close-outline" size={24} color="gray" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {isFocused && (
               <TouchableOpacity
-                onPress={() => setSearchText("")}
-                style={styles.clearButton}
+                onPress={handleCancel}
+                style={styles.cancelButton}
               >
-                <Ionicons name="close-outline" size={24} color="gray" />
+                <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {isFocused && (
-            <TouchableOpacity
-              onPress={handleCancel}
-              style={styles.cancelButton}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.optionsContainer}>
-          {options.map((option, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.option,
-                selectedOption === option && styles.selectedOption,
-              ]}
-              onPress={() => handleOptionSelect(option)}
-            >
-              <Text
+          <View style={styles.optionsContainer}>
+            {options.map((option, index) => (
+              <TouchableOpacity
+                key={index}
                 style={[
-                  styles.optionText,
-                  selectedOption === option && styles.selectedOptionText,
+                  styles.option,
+                  selectedOption === option && styles.selectedOption,
                 ]}
+                onPress={() => handleOptionSelect(option)}
               >
-                {option}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.resultsContainer}>
-        {searchText.length === 0 && selectedOption === "Artists" && (
-          <View style={styles.artistsContainer}>
-            {topArtists.length === 5 && (
-              <>
-                <View style={styles.centerArtist}>
-                  <TouchableOpacity
-                    style={styles.artistItem}
-                    onPress={() => handleArtistClick(topArtists[0])}
-                  >
-                    <View style={styles.crownContainer}>
-                      <MaterialCommunityIcons
-                        name="crown"
-                        size={35}
-                        color="#FFD700"
-                        style={styles.crownIcon}
-                      />
-                    </View>
-                    <Image
-                      source={{ uri: topArtists[0].images[0]?.url }}
-                      style={styles.artistImageLarge}
-                    />
-                    <Text style={styles.artistText}>{topArtists[0].name}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.row}>
-                  <TouchableOpacity
-                    style={styles.artistItem}
-                    onPress={() => handleArtistClick(topArtists[1])}
-                  >
-                    <Image
-                      source={{ uri: topArtists[1].images[0]?.url }}
-                      style={styles.artistImage}
-                    />
-                    <Text style={styles.artistText}>{topArtists[1].name}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.artistItem}
-                    onPress={() => handleArtistClick(topArtists[2])}
-                  >
-                    <Image
-                      source={{ uri: topArtists[2].images[0]?.url }}
-                      style={styles.artistImage}
-                    />
-                    <Text style={styles.artistText}>{topArtists[2].name}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.row}>
-                  <TouchableOpacity
-                    style={styles.artistItem}
-                    onPress={() => handleArtistClick(topArtists[3])}
-                  >
-                    <Image
-                      source={{ uri: topArtists[3].images[0]?.url }}
-                      style={styles.artistImage}
-                    />
-                    <Text style={styles.artistText}>{topArtists[3].name}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.artistItem}
-                    onPress={() => handleArtistClick(topArtists[4])}
-                  >
-                    <Image
-                      source={{ uri: topArtists[4].images[0]?.url }}
-                      style={styles.artistImage}
-                    />
-                    <Text style={styles.artistText}>{topArtists[4].name}</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-        )}
-
-        {searchText.length === 0 &&
-          (selectedOption === "Albums" || selectedOption === "People") &&
-          recentSearches.length > 0 && (
-            <View style={styles.recentSearchesContainer}>
-              <View style={styles.recentSearchesHeader}>
-                <Text style={styles.recentSearchesTitle}>Recent Searches</Text>
-                <TouchableOpacity onPress={clearRecentSearches}>
-                  <Text style={styles.clearRecentSearchesText}>Clear All</Text>
-                </TouchableOpacity>
-              </View>
-              {recentSearches.map((query, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.recentSearchItem}
-                  onPress={() => handleRecentSearchClick(query)}
+                <Text
+                  style={[
+                    styles.optionText,
+                    selectedOption === option && styles.selectedOptionText,
+                  ]}
                 >
-                  <Text style={styles.recentSearchText}>{query}</Text>
-                  <TouchableOpacity onPress={() => deleteSearchQuery(query)}>
-                    <Ionicons name="close-outline" size={20} color="gray" />
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.resultsContainer}>
+          {searchText.length === 0 && selectedOption === "Artists" && (
+            <View style={styles.artistsContainer}>
+              {topArtists.length === 5 && (
+                <>
+                  <View style={styles.centerArtist}>
+                    <TouchableOpacity
+                      style={styles.artistItem}
+                      onPress={() => handleArtistClick(topArtists[0])}
+                    >
+                      <View style={styles.crownContainer}>
+                        <MaterialCommunityIcons
+                          name="crown"
+                          size={35}
+                          color="#FFD700"
+                          style={styles.crownIcon}
+                        />
+                      </View>
+                      <Image
+                        source={{ uri: topArtists[0].images[0]?.url }}
+                        style={styles.artistImageLarge}
+                      />
+                      <Text style={styles.artistText}>
+                        {topArtists[0].name}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.row}>
+                    <TouchableOpacity
+                      style={styles.artistItem}
+                      onPress={() => handleArtistClick(topArtists[1])}
+                    >
+                      <Image
+                        source={{ uri: topArtists[1].images[0]?.url }}
+                        style={styles.artistImage}
+                      />
+                      <Text style={styles.artistText}>
+                        {topArtists[1].name}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.artistItem}
+                      onPress={() => handleArtistClick(topArtists[2])}
+                    >
+                      <Image
+                        source={{ uri: topArtists[2].images[0]?.url }}
+                        style={styles.artistImage}
+                      />
+                      <Text style={styles.artistText}>
+                        {topArtists[2].name}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.row}>
+                    <TouchableOpacity
+                      style={styles.artistItem}
+                      onPress={() => handleArtistClick(topArtists[3])}
+                    >
+                      <Image
+                        source={{ uri: topArtists[3].images[0]?.url }}
+                        style={styles.artistImage}
+                      />
+                      <Text style={styles.artistText}>
+                        {topArtists[3].name}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.artistItem}
+                      onPress={() => handleArtistClick(topArtists[4])}
+                    >
+                      <Image
+                        source={{ uri: topArtists[4].images[0]?.url }}
+                        style={styles.artistImage}
+                      />
+                      <Text style={styles.artistText}>
+                        {topArtists[4].name}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </View>
           )}
 
-        {searchText.length === 0 &&
-          (selectedOption === "Albums" || selectedOption === "People") &&
-          recentSearches.length === 0 && (
-            <Text style={styles.noRecentSearchesText}>No recent searches.</Text>
-          )}
+          {searchText.length === 0 &&
+            (selectedOption === "Albums" || selectedOption === "People") &&
+            recentSearches.length > 0 && (
+              <View style={styles.recentSearchesContainer}>
+                <View style={styles.recentSearchesHeader}>
+                  <Text style={styles.recentSearchesTitle}>
+                    Recent Searches
+                  </Text>
+                  <TouchableOpacity onPress={clearRecentSearches}>
+                    <Text style={styles.clearRecentSearchesText}>
+                      Clear All
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {recentSearches.map((query, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.recentSearchItem}
+                    onPress={() => handleRecentSearchClick(query)}
+                  >
+                    <Text style={styles.recentSearchText}>{query}</Text>
+                    <TouchableOpacity onPress={() => deleteSearchQuery(query)}>
+                      <Ionicons name="close-outline" size={20} color="gray" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
-        {searchText.length > 0 && (
-          <FlatList
-            key={selectedOption}
-            data={searchResults}
-            keyExtractor={(item, index) => `${item.id}-${index}`}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => {
-                  if (selectedOption === "Albums") {
-                    handleAlbumClick(item);
-                  } else if (selectedOption === "People") {
-                    handleUserClick(item);
-                  } else if (selectedOption === "Artists") {
-                    handleArtistClick(item);
-                  }
-                }}
-                style={[
-                  styles.resultItem,
-                  selectedOption === "People"
-                    ? styles.peopleResultItem
-                    : styles.defaultResultItem,
-                ]}
-              >
-                <Image
-                  source={{
-                    uri:
-                      item.images?.[0]?.url ||
-                      "https://harmonia-profile-images.s3.amazonaws.com/default.png",
+          {searchText.length === 0 &&
+            (selectedOption === "Albums" || selectedOption === "People") &&
+            recentSearches.length === 0 && (
+              <Text style={styles.noRecentSearchesText}>
+                No recent searches.
+              </Text>
+            )}
+
+          {searchText.length > 0 && (
+            <FlatList
+              key={selectedOption}
+              data={searchResults}
+              keyExtractor={(item, index) => `${item.id}-${index}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (selectedOption === "Albums") {
+                      handleAlbumClick(item);
+                    } else if (selectedOption === "People") {
+                      handleUserClick(item);
+                    } else if (selectedOption === "Artists") {
+                      handleArtistClick(item);
+                    }
                   }}
                   style={[
-                    styles.image,
-                    selectedOption === "Artists"
-                      ? styles.artistImage
-                      : selectedOption === "People"
-                      ? styles.peopleImage
-                      : null,
+                    styles.resultItem,
+                    selectedOption === "People"
+                      ? styles.peopleResultItem
+                      : styles.defaultResultItem,
                   ]}
-                />
-                <View style={styles.resultDetails}>
-                  <Text
-                    style={styles.resultText}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {item.name}
-                  </Text>
-                  {selectedOption === "People" && (
-                    <TouchableOpacity
-                      style={styles.followButton}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        setTimeout(() => saveSearchQuery(item.name), 3000);
-                      }}
+                >
+                  <Image
+                    source={{
+                      uri:
+                        item.images?.[0]?.url ||
+                        Image.resolveAssetSource(defaultProfileImage).uri,
+                    }}
+                    style={[
+                      styles.image,
+                      selectedOption === "Artists"
+                        ? styles.artistImage
+                        : selectedOption === "People"
+                        ? styles.peopleImage
+                        : null,
+                    ]}
+                  />
+                  <View style={styles.resultDetails}>
+                    <Text
+                      style={styles.resultText}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
-                      <Ionicons
-                        name="person-add-outline"
-                        size={20}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
-            numColumns={selectedOption === "People" ? 1 : 2}
-            contentContainerStyle={styles.resultsList}
-            columnWrapperStyle={
-              selectedOption === "People"
-                ? null
-                : { justifyContent: "space-between" }
-            }
-            onEndReached={loadMoreResults}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={
-              isLoading ? (
-                <ActivityIndicator size="large" color="white" />
-              ) : null
-            }
-          />
-        )}
+                      {item.name}
+                    </Text>
+                    {selectedOption === "People" && (
+                      <TouchableOpacity
+                        style={styles.followButton}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          setTimeout(() => saveSearchQuery(item.name), 3000);
+                        }}
+                      >
+                        <Ionicons
+                          name="person-add-outline"
+                          size={20}
+                          color="white"
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              )}
+              numColumns={selectedOption === "People" ? 1 : 2}
+              contentContainerStyle={styles.resultsList}
+              columnWrapperStyle={
+                selectedOption === "People"
+                  ? null
+                  : { justifyContent: "space-between" }
+              }
+              onEndReached={loadMoreResults}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={
+                isLoading ? (
+                  <ActivityIndicator size="large" color="white" />
+                ) : null
+              }
+            />
+          )}
+        </View>
       </View>
-    </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -630,6 +651,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     flexShrink: 1,
+    marginLeft: 10,
   },
   followButton: {
     backgroundColor: "#444",

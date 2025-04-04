@@ -21,7 +21,8 @@ import { AuthContext } from "../../context/AuthContext";
 
 export default function AuthenticationSettings() {
   const router = useRouter();
-  const { userId } = useContext(AuthContext); // Get userId from AuthContext
+  const { userId, logout } = useContext(AuthContext); // Get userId from AuthContext
+  const defaultProfileImage = require("../../../assets/images/default-profile-photo.webp"); // Varsayılan profil fotoğrafı
 
   // Kullanıcı profili durumu
   const [profile, setProfile] = useState({
@@ -137,15 +138,45 @@ export default function AuthenticationSettings() {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to log out?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Logout",
+          onPress: () => {
+            logout(); // Clear token and update authentication state
+            router.replace("/Screens/Auth"); // Navigate to login screen
+          },
+        },
+      ],
+      { cancelable: false }
+    );
+  };
+
   return (
-    <KeyboardAvoidingView style={styles.container} behavior="padding">
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 50, paddingHorizontal: 20 }} // İçerikleri kenarlardan ayırır.
+          showsVerticalScrollIndicator={true}
+          scrollIndicatorInsets={{ right: 0 }} // Scrollbar'ı sağa yapıştırır.
+          style={{ flex: 1, width: "100%" }}
+        >
           <View style={styles.headerContainer}>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity
+              onPress={() => router.push("/Screens/Profile/Profile")}
+            >
               <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
-            <Text style={styles.header}>Profile Management</Text>
           </View>
 
           <View style={styles.formContainer}>
@@ -156,18 +187,24 @@ export default function AuthenticationSettings() {
                   source={{ uri: selectedImage.uri }}
                   style={styles.profileImage}
                 />
-              ) : profile.profileImage ? (
+              ) : profile.profileImage &&
+                profile.profileImage !== "default.png" ? (
                 <Image
                   source={{ uri: profile.profileImage }}
                   style={styles.profileImage}
                 />
               ) : (
-                <View style={styles.placeholderImage}>
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={100}
-                    color="gray"
+                <View style={{ position: "relative" }}>
+                  <Image
+                    source={require("../../../assets/images/default-profile-photo.webp")}
+                    style={styles.profileImage}
                   />
+                  <View style={styles.speechBubble}>
+                    <Text style={styles.speechBubbleText}>
+                      Click me to change your profile photo!
+                    </Text>
+                    <View style={styles.speechBubbleTriangle} />
+                  </View>
                 </View>
               )}
             </TouchableOpacity>
@@ -231,6 +268,13 @@ export default function AuthenticationSettings() {
             >
               <Text style={styles.saveButtonText}>Save Updates</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+            >
+              <Text style={styles.logoutButtonText}>Log Out</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -242,8 +286,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#1E1E1E",
-    padding: 20,
-  },
+    paddingTop: 70,
+}
+,
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -283,6 +328,8 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: "#1DB954",
     padding: 15,
+    marginTop: 10,
+    marginBottom: 20,
     borderRadius: 8,
   },
   saveButtonText: {
@@ -306,5 +353,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "center",
     marginBottom: 20,
+  },
+  logoutButton: {
+    backgroundColor: "#FF3B30",
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  logoutButtonText: {
+    color: "white",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  speechBubble: {
+    position: "absolute",
+    top: 0,
+    right: 10,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 8,
+    borderColor: "#14853c",
+    borderWidth: 2,
+    maxWidth: 140,
+    zIndex: 1,
+    alignItems: "center",
+  },
+  speechBubbleText: {
+    color: "black",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  speechBubbleTriangle: {
+    position: "absolute",
+    bottom: -0,
+    left: "0%",
+    marginLeft: -6,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderBottomWidth: 6,
+    borderStyle: "solid",
+    backgroundColor: "transparent",
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderColor: "#14853c",
   },
 });

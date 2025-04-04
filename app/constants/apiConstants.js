@@ -12,15 +12,15 @@ export const TOKEN_URL = "https://accounts.spotify.com/api/token";
 export const SCOPES = "user-library-read playlist-read-private user-top-read";
 
 // Backend Services
-export const BACKEND_AMAZON_SERVICES_URL = `${IP_ADDRESS}:8000`;
+export const BACKEND_AMAZON_SERVICES_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_API_GATEWAY_URL = `${IP_ADDRESS}:8765`;
-export const BACKEND_COMMENT_URL = `${IP_ADDRESS}:6525`;
-export const BACKEND_CREDENTIALS_URL = `${IP_ADDRESS}:1000`;
-export const BACKEND_EMAIL_SENDER_URL = `${IP_ADDRESS}:1500`;
-export const BACKEND_FAVORITE_URL = `${IP_ADDRESS}:6505`;
-export const BACKEND_PROFILE_API_URL = `${IP_ADDRESS}:2000`;
-export const BACKEND_PROFILE_PICTURE_DOWNLOADER_URL = `${IP_ADDRESS}:2121`;
-export const BACKEND_REVIEW_URL = `${IP_ADDRESS}:6605`;
-export const BACKEND_REVIEW_LIKE_URL = `${IP_ADDRESS}:2123`;
-export const BACKEND_SEARCH_PROFILE_URL = `${IP_ADDRESS}:6500`;
-export const BACKEND_USER_FOLLOW_URL = `${IP_ADDRESS}:6421`;
+export const BACKEND_COMMENT_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_CREDENTIALS_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_EMAIL_SENDER_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_FAVORITE_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_PROFILE_API_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_PROFILE_PICTURE_DOWNLOADER_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_REVIEW_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_REVIEW_LIKE_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_SEARCH_PROFILE_URL = `${IP_ADDRESS}:8765`;
+export const BACKEND_USER_FOLLOW_URL = `${IP_ADDRESS}:8765`;

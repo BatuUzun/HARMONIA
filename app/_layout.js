@@ -25,7 +25,6 @@ function Layout() {
   }, [isAuthenticated]);
 
   if (!isAuthenticated) {
-    // Show authentication stack (without bottom navigation)
     return (
       <Stack>
         <Stack.Screen
@@ -34,6 +33,10 @@ function Layout() {
         />
         <Stack.Screen
           name="Screens/Auth/SignUp"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Screens/Auth/VerificationSettings"
           options={{ headerShown: false }}
         />
       </Stack>
@@ -57,9 +60,6 @@ function Layout() {
             case "Screens/Review/Entry/index":
               iconName = "add-circle-outline";
               break;
-            case "Screens/Activity/Main/index":
-              iconName = "pulse-outline";
-              break;
             case "Screens/Profile/Profile/index":
               iconName = "person-outline";
               break;
@@ -78,6 +78,12 @@ function Layout() {
           paddingTop: 10,
           paddingBottom: 10,
         },
+        headerStyle: {
+          backgroundColor: "#1E1E1E",
+        },
+        headerTitleStyle: {
+          color: "white",
+        },
       })}
     >
       <Tabs.Screen
@@ -93,18 +99,18 @@ function Layout() {
         options={{ title: "Review" }}
       />
       <Tabs.Screen
-        name="Screens/Activity/Main/index"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
         name="Screens/Profile/Profile/index"
         options={{ title: "Profile" }}
       />
       <Tabs.Screen name="Screens/Auth/index" options={{ href: null }} />
       <Tabs.Screen name="Screens/Auth/SignUp" options={{ href: null }} />
       <Tabs.Screen
-        name="Screens/AuthenticationSettings/index"
+        name="Screens/Auth/VerificationSettings"
         options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="Screens/AuthenticationSettings/index"
+        options={{ href: null, headerShown: false }}
       />
       <Tabs.Screen
         name="Screens/Profile/ArtistProfile/index"

@@ -10,24 +10,35 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const checkLoginStatus = async () => {
-      const token = await AsyncStorage.getItem("userToken");
-      const storedUserId = await AsyncStorage.getItem("userId");
-      if (token && storedUserId) {
-        setIsAuthenticated(true);
-        setUserId(storedUserId);
-      } else {
-        setIsAuthenticated(false);
-        setUserId(null);
+      try {
+        const token = await AsyncStorage.getItem("userToken");
+        const storedUserId = await AsyncStorage.getItem("userId");
+        if (token && storedUserId) {
+          setIsAuthenticated(true);
+          setUserId(storedUserId);
+        } else {
+          setIsAuthenticated(false);
+          setUserId(null);
+        }
+      } catch (error) {
+        console.error(
+          "Error fetching token or userId from AsyncStorage",
+          error
+        );
       }
     };
     checkLoginStatus();
   }, []);
 
   const login = async (token, userId) => {
-    await AsyncStorage.setItem("userToken", token);
-    await AsyncStorage.setItem("userId", userId.toString()); // Store userId
-    setIsAuthenticated(true);
-    setUserId(userId); // Set userId
+    try {
+      await AsyncStorage.setItem("userToken", token);
+      await AsyncStorage.setItem("userId", userId.toString());
+      setIsAuthenticated(true);
+      setUserId(userId);
+    } catch (error) {
+      console.error("Error saving token and userId to AsyncStorage", error);
+    }
   };
 
   const logout = async () => {
