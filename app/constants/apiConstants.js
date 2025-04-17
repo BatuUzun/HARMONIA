@@ -1,5 +1,5 @@
 // Buradaki bilgiler demo süreci için. Üretim ortamında backend'e aktarılmalıdır.
-const IP_ADDRESS = "http://192.168.0.27"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
+const IP_ADDRESS = "localhost"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
 
 //HARMONIA APP
 
@@ -24,3 +24,6 @@ export const BACKEND_REVIEW_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_REVIEW_LIKE_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_SEARCH_PROFILE_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_USER_FOLLOW_URL = `${IP_ADDRESS}:8765`;
+
+// Development or Production
+export const IS_DEVELOPMENT = false; // true: Development, false: Production

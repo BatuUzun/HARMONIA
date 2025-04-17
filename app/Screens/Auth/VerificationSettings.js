@@ -8,10 +8,14 @@ import {
   StyleSheet,
   TouchableWithoutFeedback,
   Keyboard,
+  Image,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import axios from "axios";
-import { BACKEND_CREDENTIALS_URL } from "../../constants/apiConstants";
+import {
+  BACKEND_CREDENTIALS_URL,
+  IS_DEVELOPMENT,
+} from "../../constants/apiConstants";
 import { AuthContext } from "../../context/AuthContext";
 
 export default function VerificationScreen() {
@@ -20,7 +24,7 @@ export default function VerificationScreen() {
   const { email, password } = useLocalSearchParams();
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationCode, setVerificationCode] = useState(null);
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
@@ -29,7 +33,6 @@ export default function VerificationScreen() {
     }
   }, [email]);
 
-  // Send Verification Code
   const sendVerificationCode = async () => {
     if (emailSent) {
       return;
@@ -39,23 +42,27 @@ export default function VerificationScreen() {
       Alert.alert("Error", "Email is required for verification.");
       return;
     }
+
     setIsLoading(true);
     try {
       const response = await axios.get(
         `${BACKEND_CREDENTIALS_URL}/email-sender/send-verification-code/`,
         {
-          params: { email, code },
+          params: { email },
         }
       );
-      console.log("✅ Code Sent:", response.data);
-      setVerificationCode(response.data);
+      if (IS_DEVELOPMENT) {
+        console.log("✅ Code Sent:", response.data);
+      }
+      setVerificationCode(response.data?.toString()); // convert to string to match input
       setEmailSent(true);
-      console.log("Success", "Verification code has been sent to your email.");
     } catch (error) {
-      console.error(
-        "❌ Error Sending Code:",
-        error.response?.data || error.message
-      );
+      if (IS_DEVELOPMENT) {
+        console.error(
+          "❌ Error Sending Code:",
+          error.response?.data || error.message
+        );
+      }
       Alert.alert("Error", "Failed to send verification code.");
     } finally {
       setIsLoading(false);
@@ -68,51 +75,66 @@ export default function VerificationScreen() {
       return;
     }
 
+    if (!verificationCode) {
+      Alert.alert("Error", "Verification code not received yet.");
+      return;
+    }
+
+    if (code !== verificationCode) {
+      Alert.alert("Error", "Invalid code. Please try again.");
+      return;
+    }
+
     try {
-      // 1. Verify the email first
-      const verifyResponse = await axios.put(
-        `${BACKEND_CREDENTIALS_URL}/credentials/verify-email`,
-        null,
-        { params: { email, code } }
+      const loginResponse = await axios.post(
+        `${BACKEND_CREDENTIALS_URL}/credentials/check-login-credentials`,
+        {
+          email: email,
+          password: password,
+          rememberMe: true,
+        }
       );
 
-      if (verifyResponse.data === true) {
-        // 2. Then login to get the token
-        const loginResponse = await axios.post(
-          `${BACKEND_CREDENTIALS_URL}/credentials/check-login-credentials`,
-          {
-            email: email,
-            password: password, // Make sure password is passed from login screen
-            rememberMe: true,
-          }
-        );
+      const result = loginResponse.data;
 
-        const result = loginResponse.data;
-
-        if (result.token && result.userId) {
-          // 3. Complete the login process
-          await login(result.token, result.userId);
-          router.replace("/Screens/Home/Feed");
-        } else {
-          throw new Error("Token or userId missing in response");
-        }
+      if (result.token && result.userId) {
+        await login(result.token, result.userId);
+        router.replace("/Screens/Home/Feed");
       } else {
-        Alert.alert("Error", "Invalid code. Please try again.");
+        throw new Error("Token or userId missing in response");
       }
     } catch (error) {
-      console.error("Verification error:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Verification error:", error);
+      }
       Alert.alert("Error", "Something went wrong. Please try again.");
     }
+  };
+
+  // Mask email (example: d*****n@gmail.com)
+  const getMaskedEmail = (email) => {
+    if (!email || typeof email !== "string") return "";
+    const [user, domain] = email.split("@");
+    const maskedUser =
+      user.length > 2
+        ? user[0] + "*".repeat(user.length - 2) + user[user.length - 1]
+        : "*".repeat(user.length);
+    return `${maskedUser}@${domain}`;
   };
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.container}>
+        <Image
+          source={require("../../../assets/images/luci-black.png")}
+          style={styles.image}
+          resizeMode="contain"
+        />
         <Text style={styles.title}>Enter Verification Code</Text>
         <Text style={styles.welcomeText}>
           We have sent a verification code to:
         </Text>
-        <Text style={styles.mailText}>{email}</Text>
+        <Text style={styles.mailText}>{getMaskedEmail(email)}</Text>
         <Text style={styles.welcomeText}>
           Please don't forget to check your spam folder!
         </Text>
@@ -137,7 +159,7 @@ export default function VerificationScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.resendButton]}
+          style={styles.resendButton}
           onPress={sendVerificationCode}
           disabled={isLoading}
         >
@@ -157,6 +179,12 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: "#1E1E1E",
   },
+  image: {
+    width: 120,
+    height: 120,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
   title: {
     fontSize: 24,
     fontWeight: "bold",
@@ -167,7 +195,7 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 18,
     color: "#BBBBBB",
-    marginBottom: 20,
+    marginBottom: 10,
     textAlign: "center",
   },
   mailText: {

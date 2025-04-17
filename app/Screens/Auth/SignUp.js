@@ -17,6 +17,7 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // Function to validate email format
   const validateEmail = (email) => {
@@ -47,6 +48,11 @@ export default function Signup() {
       return;
     }
 
+    if (password !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match.");
+      return;
+    }
+
     try {
       const response = await fetch(
         `${BACKEND_CREDENTIALS_URL}/credentials/create-user`,
@@ -64,10 +70,7 @@ export default function Signup() {
       );
 
       if (response.ok) {
-        Alert.alert(
-          "Success",
-          "Signup successful! A verification code has been sent to your email."
-        );
+        Alert.alert("Success", "Signup successful! You can now log in.");
 
         // Kayıt sonrası LOGIN ekranına yönlendiriyoruz
         router.push("/Screens/Auth");
@@ -110,6 +113,16 @@ export default function Signup() {
           placeholder="Password"
           value={password}
           onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+        />
+
+        {/* Confirm Password Input */}
+        <TextInput
+          style={styles.input}
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
           secureTextEntry
           autoCapitalize="none"
         />

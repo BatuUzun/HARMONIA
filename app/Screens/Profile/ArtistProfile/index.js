@@ -31,10 +31,6 @@ const { width } = Dimensions.get("window");
 
 function ArtistProfile({ route, navigation }) {
   const { artistId, artistName, artistImage } = route.params || {};
-
-  console.log("ArtistProfile - Artist ID:", artistId); // Log the artist ID
-  console.log("ArtistProfile - Artist Name:", artistName); // Log the artist name
-  console.log("ArtistProfile - Artist Image:", artistImage); // Log the artist image URL
   const [albums, setAlbums] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +48,9 @@ function ArtistProfile({ route, navigation }) {
   // Fetch albums when artistId changes
   useEffect(() => {
     if (!artistId) {
-      console.error("Artist ID is undefined");
+      if (IS_DEVELOPMENT) {
+        console.error("Artist ID is undefined");
+      }
       return;
     }
     fetchAlbums();
@@ -60,37 +58,51 @@ function ArtistProfile({ route, navigation }) {
 
   const fetchAlbums = async () => {
     try {
-      console.log("Fetching albums for artistId:", artistId); // Log artistId
       const albumsData = await getArtistAlbums(artistId);
-      console.log("Albums data received:", albumsData); // Log the response
+
+      if (IS_DEVELOPMENT) {
+        console.log("Fetching albums for artistId:", artistId); // Log artistId
+        console.log("Albums data received:", albumsData); // Log the response
+      }
 
       if (!albumsData || !Array.isArray(albumsData)) {
-        console.error("Invalid albums data:", albumsData);
+        if (IS_DEVELOPMENT) {
+          console.error("Invalid albums data:", albumsData);
+        }
         return;
       }
 
       setAlbums(albumsData);
       fetchAverageRatings(albumsData);
     } catch (error) {
-      console.error("Error fetching albums:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching albums:", error);
+      }
     }
   };
 
   const fetchAverageRatings = async (albums) => {
     try {
       const ratingsData = {};
-      console.log("Albums received:", albums); // Debugging
+      if (IS_DEVELOPMENT) {
+        console.log("Albums received:", albums); // Debugging
+      }
 
       for (const album of albums) {
-        console.log("Processing album:", album); // Debugging
+        if (IS_DEVELOPMENT) {
+          console.log("Processing album:", album); // Debugging
+        }
         if (!album.id) {
-          console.error("Album ID is undefined:", album);
+          if (IS_DEVELOPMENT) {
+            console.error("Album ID is undefined:", album);
+          }
           continue; // Skip this album
         }
 
         const averageRating = await getAverageRating(album.id);
-        console.log(`Average rating for album ${album.id}:`, averageRating);
-
+        if (IS_DEVELOPMENT) {
+          console.log(`Average rating for album ${album.id}:`, averageRating);
+        }
         ratingsData[album.id] =
           averageRating !== undefined &&
           typeof averageRating === "number" &&
@@ -100,7 +112,9 @@ function ArtistProfile({ route, navigation }) {
       }
       setAverageRatings(ratingsData);
     } catch (error) {
-      console.error("Error fetching average ratings:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching average ratings:", error);
+      }
     }
   };
 
@@ -115,7 +129,9 @@ function ArtistProfile({ route, navigation }) {
       await fetchLikedReviews(reviewsData); // Yeni fonksiyon eklendi
       fetchUsernames(reviewsData);
     } catch (error) {
-      console.error("Error fetching reviews:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching reviews:", error);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -135,23 +151,30 @@ function ArtistProfile({ route, navigation }) {
       reviewsData.map(async (review) => {
         try {
           const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${userId}`;
-          console.log(`🔍 Fetching liked status from: ${url}`);
+
+          if (IS_DEVELOPMENT) {
+            console.log(`🔍 Fetching liked status from: ${url}`);
+          }
 
           const response = await fetch(url);
 
           if (!response.ok) {
-            console.error(
-              `❌ API Error for review ${review.id}:`,
-              response.status,
-              response.statusText
-            );
+            if (IS_DEVELOPMENT) {
+              console.error(
+                `❌ API Error for review ${review.id}:`,
+                response.status,
+                response.statusText
+              );
+            }
             likedReviewsData[review.id] = null;
             return;
           }
 
           const text = await response.text();
           if (!text) {
-            console.warn(`⚠️ Empty response for review ${review.id}`);
+            if (IS_DEVELOPMENT) {
+              console.warn(`⚠️ Empty response for review ${review.id}`);
+            }
             likedReviewsData[review.id] = null;
             return;
           }
@@ -161,10 +184,12 @@ function ArtistProfile({ route, navigation }) {
           // 🔥 Eğer `data.id` null ise, bu review beğenilmemiş demektir
           likedReviewsData[review.id] = data.id ? data.id : null;
         } catch (error) {
-          console.error(
-            `❌ Error fetching liked status for review ${review.id}:`,
-            error
-          );
+          if (IS_DEVELOPMENT) {
+            console.error(
+              `❌ Error fetching liked status for review ${review.id}:`,
+              error
+            );
+          }
           likedReviewsData[review.id] = null;
         }
       })
@@ -185,10 +210,12 @@ function ArtistProfile({ route, navigation }) {
           const data = await response.json();
           likeCountsData[review.id] = data.success ? data.data : 0;
         } catch (error) {
-          console.error(
-            `Error fetching like count for review ${review.id}:`,
-            error
-          );
+          if (IS_DEVELOPMENT) {
+            console.error(
+              `Error fetching like count for review ${review.id}:`,
+              error
+            );
+          }
           likeCountsData[review.id] = 0;
         }
       })
@@ -206,7 +233,9 @@ function ArtistProfile({ route, navigation }) {
       }
       setUsernames(usernamesData);
     } catch (error) {
-      console.error("Error fetching usernames:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching usernames:", error);
+      }
     }
   };
 
@@ -215,7 +244,9 @@ function ArtistProfile({ route, navigation }) {
       const tracksData = await getAlbumTracks(albumId);
       setTracks(tracksData);
     } catch (error) {
-      console.error("Error fetching album tracks:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching album tracks:", error);
+      }
     }
   };
 
@@ -252,7 +283,9 @@ function ArtistProfile({ route, navigation }) {
 
           await fetchReviews(); // 🔥 Refresh işlemi
         } else {
-          console.error("Unlike işlemi başarısız:", await response.json());
+          if (IS_DEVELOPMENT) {
+            console.error("Unlike işlemi başarısız:", await response.json());
+          }
         }
       } else {
         // Like işlemi
@@ -266,8 +299,9 @@ function ArtistProfile({ route, navigation }) {
         );
 
         const data = await response.json();
-        console.log("✅ Like işlemi response:", data); // API yanıtını logla
-
+        if (IS_DEVELOPMENT) {
+          console.log("✅ Like işlemi response:", data); // API yanıtını logla
+        }
         if (response.ok || data.success) {
           // 🔥 Backend yanlış response dönse bile başarı say
           setLikedReviews((prev) => ({
@@ -284,7 +318,9 @@ function ArtistProfile({ route, navigation }) {
         }
       }
     } catch (error) {
-      console.error("Like/Unlike işlemi sırasında hata oluştu:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Like/Unlike işlemi sırasında hata oluştu:", error);
+      }
     } finally {
       setRefreshing(true); // 🔥 Refresh tetikle
     }
@@ -306,11 +342,12 @@ function ArtistProfile({ route, navigation }) {
   const renderAlbum = ({ item }) => {
     const userRating = getUserRatingForAlbum(item.id);
     const averageRating = averageRatings[item.id];
-    console.log(
-      `Rendering album ${item.id} with average rating:`,
-      averageRating
-    ); // Debug log
-
+    if (IS_DEVELOPMENT) {
+      console.log(
+        `Rendering album ${item.id} with average rating:`,
+        averageRating
+      ); // Debug log
+    }
     const truncateAlbumName = (name) => {
       const words = name.split(" ");
       if (words.length > 3) {

@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router"; // Use useLocalSearchParams to get navigation params
+import { useRouter, useLocalSearchParams } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { getUserProfile } from "../../../api/backend";
 import {
@@ -29,7 +29,8 @@ import { Linking } from "react-native";
 import FontAwesome from "react-native-vector-icons/FontAwesome";
 import { Keyboard } from "react-native";
 import { AuthContext } from "../../../context/AuthContext";
-
+import { TouchableWithoutFeedback } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import {
   CLIENT_ID,
   CLIENT_SECRET,
@@ -42,11 +43,12 @@ import {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { logout } = useContext(AuthContext); // Add logout from AuthContext
-  const { userId: loggedInUserId } = useContext(AuthContext); // Get logged-in user ID from AuthContext
-  const { userId } = useLocalSearchParams(); // Get userId from navigation params
+  const { logout } = useContext(AuthContext);
+  const { userId: loggedInUserId } = useContext(AuthContext);
+  const { userId } = useLocalSearchParams();
   const [currentUserId, setCurrentUserId] = useState(null);
   const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (userId) {
@@ -81,8 +83,8 @@ export default function ProfileScreen() {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
 
-  const [refreshing, setRefreshing] = useState(false); // Profil yenileme state
-  const [reviewsRefreshing, setReviewsRefreshing] = useState(false); // Reviews modal yenileme state
+  const [refreshing, setRefreshing] = useState(false);
+  const [reviewsRefreshing, setReviewsRefreshing] = useState(false);
 
   const [followersModalVisible, setFollowersModalVisible] = useState(false);
   const [followingModalVisible, setFollowingModalVisible] = useState(false);
@@ -90,16 +92,19 @@ export default function ProfileScreen() {
   const [reviews, setReviews] = useState([]);
   const [reviewCount, setReviewCount] = useState(0);
   const [reviewsModalVisible, setReviewsModalVisible] = useState(false);
-  const [albumImages, setAlbumImages] = useState({}); // Albüm resimlerini tutar
+  const [albumImages, setAlbumImages] = useState({});
   const [loading, setLoading] = useState(true);
   const [likedReviews, setLikedReviews] = useState({});
   const [selectedReviewId, setSelectedReviewId] = useState(null);
+  const [nextFollowersCursor, setNextFollowersCursor] = useState(null);
+  const [nextFollowingCursor, setNextFollowingCursor] = useState(null);
+  const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
+  const [isLoadingFollowing, setIsLoadingFollowing] = useState(false);
 
   const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ALBUM_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ARTIST_API_URL = "https://api.spotify.com/v1/artists";
 
-  // Spotify Access Token Alma
   const fetchSpotifyAccessToken = async () => {
     try {
       const response = await fetch(TOKEN_URL, {
@@ -121,7 +126,18 @@ export default function ProfileScreen() {
     }
   };
 
-  // Sayfa açıldığında token al
+  useEffect(() => {
+    if (followersModalVisible) {
+      fetchFollowers();
+    }
+  }, [followersModalVisible]);
+
+  useEffect(() => {
+    if (followingModalVisible) {
+      fetchFollowing();
+    }
+  }, [followingModalVisible]);
+
   useEffect(() => {
     fetchSpotifyAccessToken();
   }, []);
@@ -129,8 +145,20 @@ export default function ProfileScreen() {
   const toggleLike = (reviewId) => {
     setLikedReviews((prev) => ({
       ...prev,
-      [reviewId]: !prev[reviewId], // Beğenildiyse kaldır, beğenilmediyse ekle
+      [reviewId]: !prev[reviewId],
     }));
+  };
+
+  const closeFollowersModal = () => {
+    setFollowers([]);
+    setNextFollowersCursor(null);
+    setFollowersModalVisible(false);
+  };
+
+  const closeFollowingModal = () => {
+    setFollowing([]);
+    setNextFollowingCursor(null);
+    setFollowingModalVisible(false);
   };
 
   const handleDeleteReview = async (reviewId) => {
@@ -146,8 +174,8 @@ export default function ProfileScreen() {
           prevReviews.filter((review) => review.id !== reviewId)
         );
         Alert.alert("Başarılı", "Review silindi.");
-        setModalVisible(false); // Modal'ı kapat
-        fetchUsersReviews(); // Silindikten sonra yenile
+        setModalVisible(false);
+        fetchUsersReviews();
       } else {
         Alert.alert("Hata", "Review silinemedi.");
       }
@@ -163,14 +191,13 @@ export default function ProfileScreen() {
       console.log("🔍 Kullanıcının reviewları getiriliyor...");
 
       const response = await fetch(
-        `${BACKEND_REVIEW_URL}/review/get-reviews/user/${currentUserId}` // Use currentUserId
+        `${BACKEND_REVIEW_URL}/review/get-reviews/user/${currentUserId}`
       );
       const data = await response.json();
       setReviews(data.content || []);
       setReviewCount(data.content ? data.content.length : 0);
-      console.log("API Yanıtı:", data); // API yanıtını konsola yazdır
+      console.log("API Yanıtı:", data);
 
-      // Albüm adlarını Spotify API'sinden çek
       const reviewsWithAlbumNames = await Promise.all(
         data.content.map(async (review) => {
           try {
@@ -183,7 +210,7 @@ export default function ProfileScreen() {
             const spotifyData = await spotifyResponse.json();
             return {
               ...review,
-              albumName: spotifyData.name, // Albüm adını ekle
+              albumName: spotifyData.name,
             };
           } catch (error) {
             console.error(
@@ -199,7 +226,6 @@ export default function ProfileScreen() {
       setReviewCount(reviewsWithAlbumNames ? reviewsWithAlbumNames.length : 0);
       console.log("API Yanıtı:", reviewsWithAlbumNames);
 
-      // Albüm resimlerini çek
       const images = await fetchAlbumImages(data.content || []);
       setAlbumImages(images);
       setLoading(false);
@@ -207,29 +233,28 @@ export default function ProfileScreen() {
       console.error("❌ Reviewları getirirken hata oluştu:", error);
       setLoading(false);
     } finally {
-      setReviewsRefreshing(false); // Yenileme tamamlandı
+      setReviewsRefreshing(false);
     }
   };
 
-  // Sayfa açıldığında reviewları getir
   useEffect(() => {
     if (accessToken) {
       fetchUsersReviews();
     }
-  }, [accessToken, currentUserId]); // Add currentUserId to dependency array
+  }, [accessToken, currentUserId]);
 
   const onRefreshReviews = () => {
     fetchUsersReviews();
   };
 
   const onRefreshProfile = async () => {
-    setRefreshing(true); // Yenileme işlemi başladı
+    setRefreshing(true);
     try {
-      await fetchProfileAndFavorites(); // Profil ve favorileri yeniden çek
+      await fetchProfileAndFavorites();
     } catch (error) {
       console.error("❌ Profil yenilenirken hata oluştu:", error);
     } finally {
-      setRefreshing(false); // Yenileme işlemi tamamlandı
+      setRefreshing(false);
     }
   };
 
@@ -279,7 +304,6 @@ export default function ProfileScreen() {
     return images;
   };
 
-  // Favori Ekleme
   const addFavorite = async (userId, spotifyId, type) => {
     try {
       console.log(
@@ -296,20 +320,16 @@ export default function ProfileScreen() {
     }
   };
 
-  // Kullanıcının Favori Görsellerini Alma
   const getUserFavoritesImages = async (accessToken, userId) => {
     try {
       console.log(`🔍 Favoriler çekiliyor: userId=${userId}`);
-
-      // İki ayrı API çağrısı yap
-      console.log("🟡 API çağrısı başlatılıyor...");
 
       const [albumsResponse, artistsResponse] = await Promise.all([
         axios
           .get(`${BACKEND_FAVORITE_URL}/favorite/user/${userId}/album?page=0`)
           .then((response) => {
             console.log("✅ Albüm API başarılı:", response.data);
-            return response.data.content; // Extract the content from the paginated response
+            return response.data.content;
           })
           .catch((error) => {
             console.error("❌ Albüm API hatası:", error);
@@ -320,7 +340,7 @@ export default function ProfileScreen() {
           .get(`${BACKEND_FAVORITE_URL}/favorite/user/${userId}/artist?page=0`)
           .then((response) => {
             console.log("✅ Sanatçı API başarılı:", response.data);
-            return response.data.content; // Extract the content from the paginated response
+            return response.data.content;
           })
           .catch((error) => {
             console.error("❌ Sanatçı API hatası:", error);
@@ -330,11 +350,9 @@ export default function ProfileScreen() {
 
       console.log("📌 API Yanıtları:", { albumsResponse, artistsResponse });
 
-      // `data.content` dizisini alıyoruz
       const albums = Array.isArray(albumsResponse) ? albumsResponse : [];
       const artists = Array.isArray(artistsResponse) ? artistsResponse : [];
 
-      // Favorileri birleştir
       const favorites = [...albums, ...artists];
 
       if (favorites.length === 0) {
@@ -406,11 +424,11 @@ export default function ProfileScreen() {
       return [];
     }
   };
-  // Profil ve Favorileri Çekme
+
   const fetchProfileAndFavorites = async () => {
     try {
       console.log("⏳ Kullanıcı profili çekiliyor...");
-      const userData = await getUserProfile(currentUserId); // Use currentUserId
+      const userData = await getUserProfile(currentUserId);
 
       if (!userData) throw new Error("❌ Kullanıcı bilgisi alınamadı.");
 
@@ -418,7 +436,7 @@ export default function ProfileScreen() {
       setAccessToken(token);
 
       console.log("⏳ Kullanıcı favorileri ve görselleri çekiliyor...");
-      const images = await getUserFavoritesImages(token, currentUserId); // Use currentUserId
+      const images = await getUserFavoritesImages(token, currentUserId);
 
       console.log("✅ Favori görselleri çekildi:", images);
 
@@ -431,7 +449,6 @@ export default function ProfileScreen() {
         location: userData.location || "Unknown location",
         link: userData.link || "Unknown link",
         profileImage: userData.profileImage || defaultProfileImage,
-
         favoriteAlbums: favoriteAlbumsData.length > 0 ? favoriteAlbumsData : [],
         favoriteArtists:
           favoriteArtistsData.length > 0 ? favoriteArtistsData : [],
@@ -445,18 +462,18 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     fetchProfileAndFavorites();
-  }, [currentUserId]); // Add currentUserId to dependency array
+  }, [currentUserId]);
 
   useEffect(() => {
     const updateFavoritesImages = async () => {
-      if (!accessToken) return; // Eğer token yoksa, işlem yapma
+      if (!accessToken) return;
 
       console.log("🔄 Favoriler tekrar güncelleniyor...");
 
       const allFavorites = [
         ...profile.favoriteAlbums,
         ...profile.favoriteArtists,
-      ].filter((fav) => fav && !fav.image); // Eğer favori var ama fotoğrafı yoksa
+      ].filter((fav) => fav && !fav.image);
 
       if (allFavorites.length === 0) return;
 
@@ -500,12 +517,10 @@ export default function ProfileScreen() {
 
   const handleAlbumOrArtistPress = (index, category) => {
     if (currentUserId === loggedInUserId) {
-      // Kullanıcı kendi profilinde, search modalını aç
       setSelectedCategory(category);
       setSelectedIndex(index);
       setSearchModalVisible(true);
     } else {
-      // Kullanıcı başka bir kullanıcının profilinde, resmi büyüt
       const item =
         category === "albums"
           ? profile.favoriteAlbums[index]
@@ -518,7 +533,6 @@ export default function ProfileScreen() {
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Resmi büyütme modalı
   const ImageModal = () => (
     <Modal visible={imageModalVisible} animationType="fade" transparent={true}>
       <View style={styles.imageModalBackground}>
@@ -534,7 +548,6 @@ export default function ProfileScreen() {
         />
         <Text style={styles.imageModalText}>{selectedItem?.name}</Text>
 
-        {/* Spotify Butonu */}
         <TouchableOpacity
           style={styles.spotifyButton}
           onPress={() => openSpotify(selectedItem)}
@@ -546,7 +559,6 @@ export default function ProfileScreen() {
     </Modal>
   );
 
-  // Access Token Çekme
   useEffect(() => {
     const fetchToken = async () => {
       try {
@@ -562,13 +574,11 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (searchModalVisible) {
-      // Arama ekranı açıldığında
-      setSearchText(""); // Arama metnini sıfırla
-      setSearchResults([]); // Arama sonuçlarını sıfırla
+      setSearchText("");
+      setSearchResults([]);
     }
   }, [searchModalVisible]);
 
-  // Arama İşlemi
   const handleSearch = async (text) => {
     setSearchText(text);
     if (!text.trim()) {
@@ -588,7 +598,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // Arama Sonucu Seçme
   const handleSelectItem = async (item) => {
     try {
       const updatedProfile = { ...profile };
@@ -596,40 +605,35 @@ export default function ProfileScreen() {
       if (selectedCategory === "artists") {
         const existingFavorite = updatedProfile.favoriteArtists[selectedIndex];
         if (existingFavorite) {
-          // Replace existing favorite using spotifyId
           await axios.put(
-            `${BACKEND_FAVORITE_URL}/favorite/replace-favorite/${existingFavorite.id}`, // Pass spotifyId here
+            `${BACKEND_FAVORITE_URL}/favorite/replace-favorite/${existingFavorite.id}`,
             {
-              userId: currentUserId, // Ensure userId is included
-              spotifyId: item.id, // New Spotify ID
-              type: "artist", // Ensure type is correct
+              userId: currentUserId,
+              spotifyId: item.id,
+              type: "artist",
             }
           );
         } else {
-          // Add new favorite
           await addFavorite(currentUserId, item.id, "artist");
         }
         updatedProfile.favoriteArtists[selectedIndex] = item;
       } else {
         const existingFavorite = updatedProfile.favoriteAlbums[selectedIndex];
         if (existingFavorite) {
-          // Replace existing favorite using spotifyId
           await axios.put(
-            `${BACKEND_FAVORITE_URL}/favorite/replace-favorite/${existingFavorite.id}`, // Pass spotifyId here
+            `${BACKEND_FAVORITE_URL}/favorite/replace-favorite/${existingFavorite.id}`,
             {
-              userId: currentUserId, // Ensure userId is included
-              spotifyId: item.id, // New Spotify ID
-              type: "album", // Ensure type is correct
+              userId: currentUserId,
+              spotifyId: item.id,
+              type: "album",
             }
           );
         } else {
-          // Add new favorite
           await addFavorite(currentUserId, item.id, "album");
         }
         updatedProfile.favoriteAlbums[selectedIndex] = item;
       }
 
-      // Fetch the image from Spotify immediately after adding the favorite
       const imageUrl = await fetchImageFromSpotify(item.id, selectedCategory);
       if (imageUrl) {
         if (selectedCategory === "artists") {
@@ -640,7 +644,7 @@ export default function ProfileScreen() {
       }
 
       setProfile(updatedProfile);
-      setSearchModalVisible(false); // Close the modal
+      setSearchModalVisible(false);
       await fetchProfileAndFavorites();
     } catch (error) {
       console.error("Error while selecting item:", error);
@@ -662,12 +666,12 @@ export default function ProfileScreen() {
 
       if (!response.ok) {
         console.warn(`⚠ Spotify API hatası: ${response.status}`);
-        console.warn("Response:", await response.text()); // Log the response body
+        console.warn("Response:", await response.text());
         return null;
       }
 
       const data = await response.json();
-      console.log("Spotify API response:", data); // Log the full response
+      console.log("Spotify API response:", data);
       return data.images?.[0]?.url || null;
     } catch (error) {
       console.error(`❌ Spotify API çağrısı başarısız (${spotifyId}):`, error);
@@ -690,13 +694,8 @@ export default function ProfileScreen() {
       console.log("📥 Follower Count Response:", followerResponse.data);
       console.log("📥 Following Count Response:", followingResponse.data);
 
-      // Eğer backend doğru bir şekilde sayı döndürüyorsa, state'e ekleyelim
-      setFollowerCount(
-        typeof followerResponse.data === "number" ? followerResponse.data : 0
-      );
-      setFollowingCount(
-        typeof followingResponse.data === "number" ? followingResponse.data : 0
-      );
+      setFollowerCount(Number(followerResponse.data));
+      setFollowingCount(Number(followingResponse.data));
     } catch (error) {
       console.error(
         "❌ API'den gelen hata:",
@@ -705,47 +704,108 @@ export default function ProfileScreen() {
     }
   };
 
-  // useEffect ile bileşen açıldığında çağır
   useEffect(() => {
-    fetchFollowCounts();
-  }, [currentUserId]); // Add currentUserId to dependency array
+    console.log("📌 currentUserId:", currentUserId);
+    if (currentUserId) fetchFollowCounts();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (currentUserId) {
+      fetchFollowCounts();
+      fetchFollowers();
+      fetchFollowing();
+    }
+  }, [currentUserId]);
 
   const [followers, setFollowers] = useState([]);
   const [following, setFollowing] = useState([]);
 
-  const fetchFollowers = async () => {
+  const fetchFollowers = async (cursor = null) => {
     try {
-      const response = await fetch(
-        `${BACKEND_USER_FOLLOW_URL}/user-follow/followers?userId=${currentUserId}` // Use currentUserId
-      );
-      const text = await response.text(); // Önce yanıtı metin olarak al
-      console.log("API Yanıtı:", text); // Yanıtı konsola yazdır
-      const data = JSON.parse(text); // JSON'a çevir
-      setFollowers(data);
+      setIsLoadingFollowers(true);
+      let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followers?userId=${currentUserId}`;
+      if (cursor) {
+        url += `&cursor=${cursor}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data && data.items) {
+        if (cursor) {
+          setFollowers((prev) => [...prev, ...data.items]);
+        } else {
+          setFollowers(data.items);
+        }
+        setNextFollowersCursor(data.nextCursor);
+      } else {
+        console.log("❌ Takipçi verisi doğru gelmedi:", data);
+        setFollowers([]);
+      }
     } catch (error) {
       console.error("❌ Takipçiler alınırken hata oluştu:", error);
+      setFollowers([]);
+    } finally {
+      setIsLoadingFollowers(false);
     }
   };
 
-  const fetchFollowing = async () => {
+  const fetchFollowing = async (cursor = null) => {
     try {
-      const response = await fetch(
-        `${BACKEND_USER_FOLLOW_URL}/user-follow/followings?userId=${currentUserId}` // Use currentUserId
-      );
-      const text = await response.text(); // Önce yanıtı metin olarak al
-      console.log("API Yanıtı:", text); // Yanıtı konsola yazdır
-      const data = JSON.parse(text); // JSON'a çevir
-      setFollowing(data);
+      setIsLoadingFollowing(true);
+      let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followings?userId=${currentUserId}`;
+      if (cursor) {
+        url += `&cursor=${cursor}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data && data.items) {
+        if (cursor) {
+          setFollowing((prev) => [...prev, ...data.items]);
+        } else {
+          setFollowing(data.items);
+        }
+        setNextFollowingCursor(data.nextCursor);
+      } else {
+        console.log("❌ Takip edilenler verisi doğru gelmedi:", data);
+        setFollowing([]);
+      }
     } catch (error) {
       console.error("❌ Takip edilenler alınırken hata oluştu:", error);
+      setFollowing([]);
+    } finally {
+      setIsLoadingFollowing(false);
     }
   };
 
-  // useEffect ile bileşen açıldığında çağır
-  useEffect(() => {
-    fetchFollowers();
-    fetchFollowing();
-  }, [currentUserId]); // Add currentUserId to dependency array
+  console.log("followers list:", followers);
+  console.log("following list:", following);
+
+  const handleFollow = async () => {
+    try {
+      const endpoint = isFollowing ? "unfollow" : "follow";
+      await axios({
+        method: isFollowing ? "delete" : "post",
+        url: `${BACKEND_USER_FOLLOW_URL}/user-follow/${endpoint}`,
+        data: {
+          followerId: loggedInUserId,
+          followedId: currentUserId,
+        },
+      });
+
+      setIsFollowing((prev) => !prev);
+
+      setTimeout(() => {
+        fetchFollowCounts();
+        fetchFollowers();
+        fetchFollowing();
+      }, 300);
+    } catch (error) {
+      console.error("Takip işlemi hatası:", error);
+    }
+  };
 
   const ReviewCard = ({
     review,
@@ -754,88 +814,183 @@ export default function ProfileScreen() {
     toggleLike,
     setModalVisible,
     setSelectedReviewId,
+    currentUserId,
+    loggedInUserId,
   }) => {
-    const [isSwiped, setIsSwiped] = useState(false);
+    const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+    const [isOptionsVisible, setIsOptionsVisible] = useState(false);
+    const [updatedComment, setUpdatedComment] = useState(review.comment);
 
-    const renderRightActions = () => (
-      <View style={styles.deleteSwipeContainer}>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => {
-            setSelectedReviewId(review.id);
-            setModalVisible(true);
-          }}
-        >
-          <Ionicons name="trash-outline" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
-    );
+    const handleDeleteReview = async () => {
+      try {
+        await axios.delete(`${BACKEND_REVIEW_URL}/review/delete/${review.id}`);
+        Alert.alert("Success", "Review deleted successfully!");
+        fetchUsersReviews();
+      } catch (error) {
+        console.error("❌ Error deleting review:", error);
+      }
+      setIsDeleteModalVisible(false);
+      setIsOptionsVisible(false);
+    };
+
+    const handleUpdateReview = async () => {
+      try {
+        const updatedReview = {
+          ...review,
+          comment: updatedComment,
+        };
+        await axios.put(
+          `${BACKEND_REVIEW_URL}/review/update/${review.id}`,
+          updatedReview
+        );
+        Alert.alert("Success", "Review updated successfully!");
+        fetchUsersReviews();
+      } catch (error) {
+        console.error("❌ Error updating review:", error);
+      }
+      setIsOptionsVisible(false);
+    };
+
+    const confirmDelete = () => {
+      Alert.alert(
+        "Are you sure?",
+        "Do you want to delete your review?",
+        [
+          {
+            text: "No",
+            onPress: () => setIsDeleteModalVisible(false),
+            style: "cancel",
+          },
+          {
+            text: "Yes",
+            onPress: handleDeleteReview,
+          },
+        ],
+        { cancelable: true }
+      );
+    };
 
     return (
-      <GestureHandlerRootView>
-        <Swipeable
-          renderRightActions={
-            review.userId === currentUserId ? renderRightActions : null
-          } //sadece currentuser yapabilmeli
-          overshootRight={false}
-          onSwipeableWillOpen={() => setIsSwiped(true)}
-          onSwipeableWillClose={() => setIsSwiped(false)}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              backgroundColor: "#1E1E1E",
-              margin: 10,
-              marginRight: isSwiped ? 0 : 10,
-              borderRadius: 10,
-              padding: 10,
-              alignItems: "center",
-            }}
-          >
-            {albumImage ? (
-              <Image source={{ uri: albumImage }} style={styles.albumCover} />
-            ) : (
-              <View style={[styles.albumCover, styles.placeholder]}>
-                <Ionicons name="image-outline" size={40} color="gray" />
-              </View>
-            )}
+      <TouchableWithoutFeedback onPress={() => setIsOptionsVisible(false)}>
+        <View style={styles.reviewCardContainer}>
+          {albumImage ? (
+            <Image source={{ uri: albumImage }} style={styles.albumCover} />
+          ) : (
+            <View style={[styles.albumCover, styles.placeholder]}>
+              <Ionicons name="image-outline" size={40} color="gray" />
+            </View>
+          )}
 
-            <View style={styles.reviewContent}>
-              <Text style={styles.usernameReview}>
-                {review.albumName || `User ${review.spotifyId}`}
-              </Text>
-              <Text style={styles.reviewDate}>
-                {new Date(review.createdAt).toDateString()}
-              </Text>
-              <Text style={styles.reviewText}>{review.comment}</Text>
-              <View style={styles.reviewFooter}>
-                <View style={styles.rating}>
-                  {[...Array(5)].map((_, i) => (
-                    <Ionicons
-                      key={i}
-                      name={i < review.rating ? "star" : "star-outline"}
-                      size={16}
-                      color="#FFD700"
-                    />
-                  ))}
-                </View>
-                <TouchableOpacity onPress={() => toggleLike(review.id)}>
-                  <View style={styles.likeContainer}>
-                    <Ionicons
-                      name={likedReviews[review.id] ? "heart" : "heart-outline"}
-                      size={20}
-                      color={likedReviews[review.id] ? "red" : "white"}
-                    />
-                    <Text style={styles.likeText}>
-                      {likedReviews[review.id]} Likes
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+          <View style={styles.reviewContent}>
+            <Text style={styles.usernameReview}>
+              {review.albumName || `User ${review.spotifyId}`}
+            </Text>
+            <Text style={styles.reviewDate}>
+              {new Date(review.createdAt).toDateString()}
+            </Text>
+            <Text style={styles.reviewText}>{review.comment}</Text>
+            <View style={styles.reviewFooter}>
+              <View style={styles.rating}>
+                {[...Array(5)].map((_, i) => (
+                  <Ionicons
+                    key={i}
+                    name={i < review.rating ? "star" : "star-outline"}
+                    size={16}
+                    color="#FFD700"
+                  />
+                ))}
               </View>
+              <TouchableOpacity onPress={() => toggleLike(review.id)}>
+                <View style={styles.likeContainer}>
+                  <Ionicons
+                    name={likedReviews[review.id] ? "heart" : "heart-outline"}
+                    size={20}
+                    color={likedReviews[review.id] ? "red" : "white"}
+                  />
+                  <Text style={styles.likeText}>
+                    {likedReviews[review.id]} Likes
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
-        </Swipeable>
-      </GestureHandlerRootView>
+
+          {currentUserId === loggedInUserId && (
+            <TouchableOpacity
+              style={styles.threeDotsButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                setIsOptionsVisible(!isOptionsVisible);
+              }}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="white" />
+            </TouchableOpacity>
+          )}
+
+          {isOptionsVisible && (
+            <View style={styles.optionsContainer}>
+              <TouchableOpacity
+                style={styles.optionButton}
+                onPress={() => setIsDeleteModalVisible(true)}
+              >
+                <Ionicons name="trash" size={20} color="red" />
+                <Text style={styles.optionText}>Delete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.optionButton}
+                onPress={() => {
+                  setIsOptionsVisible(false);
+                  router.push({
+                    pathname: "/Screens/Review/Entry",
+                    params: {
+                      selectedAlbum: JSON.stringify({
+                        id: review.spotifyId,
+                        name: review.albumName,
+                        images: [{ url: albumImage }],
+                        release_date: review.createdAt,
+                      }),
+                      reviewToUpdate: JSON.stringify(review),
+                    },
+                  });
+                }}
+              >
+                <Ionicons name="create" size={20} color="green" />
+                <Text style={styles.optionText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {isDeleteModalVisible && (
+            <Modal
+              visible={isDeleteModalVisible}
+              animationType="fade"
+              transparent={true}
+            >
+              <View style={styles.modalBackground}>
+                <View style={styles.deleteModal}>
+                  <Text style={styles.deleteModalTitle}>
+                    Are you sure you want to delete your review?
+                  </Text>
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonNo]}
+                      onPress={() => setIsDeleteModalVisible(false)}
+                    >
+                      <Text style={styles.textStyle}>No</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonYes]}
+                      onPress={confirmDelete}
+                    >
+                      <Text style={styles.textStyle}>Yes</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          )}
+        </View>
+      </TouchableWithoutFeedback>
     );
   };
 
@@ -845,14 +1000,22 @@ export default function ProfileScreen() {
         style={styles.container}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing} // Yenileme işlemi devam ediyorsa true, değilse false
-            onRefresh={onRefreshProfile} // Yenileme işlemi tetiklendiğinde çağrılacak fonksiyon
-            colors={["#1DB954"]} // iOS için refresh spinner rengi
-            tintColor="#1DB954" // iOS için refresh spinner rengi
+            refreshing={refreshing}
+            onRefresh={onRefreshProfile}
+            colors={["#1DB954"]}
+            tintColor="#1DB954"
           />
         }
         ListHeaderComponent={
           <>
+            {currentUserId !== loggedInUserId && (
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => router.push("/Screens/Profile/Profile")}
+              >
+                <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.settingsButton}
               onPress={() => router.push("Screens/AuthenticationSettings")}
@@ -888,27 +1051,28 @@ export default function ProfileScreen() {
 
                 <TouchableOpacity
                   style={styles.statItem}
-                  onPress={() => setFollowingModalVisible(true)}
+                  onPress={() => {
+                    fetchFollowing();
+                    setFollowingModalVisible(true);
+                  }}
                 >
-                  <Text style={styles.statNumber}>
-                    {typeof followingCount === "number" ? followingCount : "0"}
-                  </Text>
+                  <Text style={styles.statNumber}>{followingCount}</Text>
                   <Text style={styles.statLabel}>Following</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.statItem}
-                  onPress={() => setFollowersModalVisible(true)}
+                  onPress={() => {
+                    fetchFollowers();
+                    setFollowersModalVisible(true);
+                  }}
                 >
-                  <Text style={styles.statNumber}>
-                    {typeof followerCount === "number" ? followerCount : "0"}
-                  </Text>
+                  <Text style={styles.statNumber}>{followerCount}</Text>
                   <Text style={styles.statLabel}>Followers</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* ✅ Bio ve Location Alanı */}
             <View style={styles.userInfoContainer}>
               <View style={styles.usernameContainer}>
                 <Text style={styles.username}>{profile.username}</Text>
@@ -935,7 +1099,6 @@ export default function ProfileScreen() {
               </Text>
             </View>
 
-            {/* ✅ Favorite Albums */}
             <View style={styles.separator} />
             <Text style={styles.favoriteTitle}>FAVORITE ALBUMS</Text>
             <View style={styles.gridContainer}>
@@ -976,7 +1139,6 @@ export default function ProfileScreen() {
               ))}
             </View>
 
-            {/* ✅ Favorite Artists */}
             <View style={styles.separator} />
             <Text style={styles.favoriteTitle}>FAVORITE ARTISTS</Text>
             <View style={styles.gridContainer}>
@@ -1025,6 +1187,7 @@ export default function ProfileScreen() {
         visible={followersModalVisible}
         animationType="slide"
         transparent={true}
+        onRequestClose={() => setFollowersModalVisible(false)}
       >
         <View style={styles.modalBackgroundFollow}>
           <View style={styles.modalContainerFollow}>
@@ -1035,19 +1198,54 @@ export default function ProfileScreen() {
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
             <Text style={styles.modalTitleFollow}>Followers</Text>
-            <FlatList
-              data={followers}
-              keyExtractor={(item) => item.userId.toString()}
-              renderItem={({ item }) => (
-                <View style={styles.userItemFollow}>
-                  <Image
-                    source={{ uri: item.profileImage }}
-                    style={styles.userImageFollow}
-                  />
-                  <Text style={styles.usernameFollow}>{item.username}</Text>
-                </View>
-              )}
-            />
+
+            {isLoadingFollowers && followers.length === 0 ? (
+              <ActivityIndicator size="large" color="#1DB954" />
+            ) : (
+              <FlatList
+                data={followers}
+                keyExtractor={(item) => item.userId.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => {
+                      navigation.navigate("Screens/Profile/Profile/index", {
+                        userId: item.userId,
+                      });
+                      setFollowersModalVisible(false);
+                    }}
+                    style={styles.userItemFollow}
+                  >
+                    <Image
+                      source={
+                        item.profileImage && item.profileImage !== "default.png"
+                          ? { uri: item.profileImage }
+                          : defaultProfileImage
+                      }
+                      style={styles.userImageFollow}
+                    />
+                    <Text style={styles.usernameFollow}>{item.username}</Text>
+                  </TouchableOpacity>
+                )}
+                ListFooterComponent={
+                  nextFollowersCursor && (
+                    <TouchableOpacity
+                      onPress={() => fetchFollowers(nextFollowersCursor)}
+                      style={styles.loadMoreButton}
+                      disabled={isLoadingFollowers}
+                    >
+                      {isLoadingFollowers ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <Text style={styles.loadMoreText}>Load More</Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                }
+                ListEmptyComponent={
+                  <Text style={styles.noResultsText}>No followers found</Text>
+                }
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -1057,6 +1255,7 @@ export default function ProfileScreen() {
         visible={followingModalVisible}
         animationType="slide"
         transparent={true}
+        onRequestClose={() => setFollowingModalVisible(false)}
       >
         <View style={styles.modalBackgroundFollow}>
           <View style={styles.modalContainerFollow}>
@@ -1067,61 +1266,64 @@ export default function ProfileScreen() {
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
             <Text style={styles.modalTitleFollow}>Following</Text>
-            <FlatList
-              data={following}
-              keyExtractor={(item) => item.userId.toString()}
-              renderItem={({ item }) => (
-                <View style={styles.userItemFollow}>
-                  <Image
-                    source={{ uri: item.profileImage }}
-                    style={styles.userImageFollow}
-                  />
-                  <Text style={styles.usernameFollow}>{item.username}</Text>
-                </View>
-              )}
-            />
+
+            {isLoadingFollowing && following.length === 0 ? (
+              <ActivityIndicator size="large" color="#1DB954" />
+            ) : (
+              <FlatList
+                data={following}
+                keyExtractor={(item) => item.userId.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => {
+                      navigation.navigate("Screens/Profile/Profile/index", {
+                        userId: item.userId,
+                      });
+                      setFollowingModalVisible(false);
+                    }}
+                    style={styles.userItemFollow}
+                  >
+                    <Image
+                      source={
+                        item.profileImage && item.profileImage !== "default.png"
+                          ? { uri: item.profileImage }
+                          : defaultProfileImage
+                      }
+                      style={styles.userImageFollow}
+                    />
+                    <Text style={styles.usernameFollow}>{item.username}</Text>
+                  </TouchableOpacity>
+                )}
+                ListFooterComponent={
+                  nextFollowingCursor && (
+                    <TouchableOpacity
+                      onPress={() => fetchFollowing(nextFollowingCursor)}
+                      style={styles.loadMoreButton}
+                      disabled={isLoadingFollowing}
+                    >
+                      {isLoadingFollowing ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <Text style={styles.loadMoreText}>Load More</Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                }
+                ListEmptyComponent={
+                  <Text style={styles.noResultsText}>Not following anyone</Text>
+                }
+              />
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Following Modal */}
-      <Modal
-        visible={followingModalVisible}
-        animationType="slide"
-        transparent={true}
-      >
-        <View style={styles.modalBackgroundFollow}>
-          <View style={styles.modalContainerFollow}>
-            <TouchableOpacity
-              onPress={() => setFollowingModalVisible(false)}
-              style={styles.closeButtonFollow}
-            >
-              <Ionicons name="close" size={24} color="white" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitleFollow}>Following</Text>
-            <FlatList
-              data={following}
-              keyExtractor={(item) => item.userId.toString()}
-              renderItem={({ item }) => (
-                <View style={styles.userItemFollow}>
-                  <Image
-                    source={{ uri: item.profileImage }}
-                    style={styles.userImageFollow}
-                  />
-                  <Text style={styles.usernameFollow}>{item.username}</Text>
-                </View>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
       {/* Reviews Modal */}
       <Modal
         visible={reviewsModalVisible}
         animationType="slide"
         transparent={true}
       >
-        {/* Reviews Modal (İpek'in çözümü gesture için)*/}
         <Modal
           animationType="slide"
           transparent={true}
@@ -1139,8 +1341,8 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   style={[styles.button, styles.buttonYes]}
                   onPress={() => {
-                    handleDeleteReview(selectedReviewId); // Review'u sil
-                    setModalVisible(false); // Modal'ı kapat
+                    handleDeleteReview(selectedReviewId);
+                    setModalVisible(false);
                   }}
                 >
                   <Text style={styles.textStyle}>Yes</Text>
@@ -1186,6 +1388,8 @@ export default function ProfileScreen() {
                     toggleLike={toggleLike}
                     setModalVisible={setModalVisible}
                     setSelectedReviewId={setSelectedReviewId}
+                    currentUserId={currentUserId}
+                    loggedInUserId={loggedInUserId}
                   />
                 )}
               />

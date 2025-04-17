@@ -1,6 +1,7 @@
 // app > context > AuthContext.js
 import React, { createContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { IS_DEVELOPMENT } from "../constants/apiConstants";
 
 export const AuthContext = createContext();
 
@@ -21,10 +22,12 @@ export const AuthProvider = ({ children }) => {
           setUserId(null);
         }
       } catch (error) {
-        console.error(
-          "Error fetching token or userId from AsyncStorage",
-          error
-        );
+        if (IS_DEVELOPMENT) {
+          console.error(
+            "Error fetching token or userId from AsyncStorage",
+            error
+          );
+        }
       }
     };
     checkLoginStatus();
@@ -37,7 +40,9 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setUserId(userId);
     } catch (error) {
-      console.error("Error saving token and userId to AsyncStorage", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error saving token and userId to AsyncStorage", error);
+      }
     }
   };
 

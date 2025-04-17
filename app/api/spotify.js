@@ -3,6 +3,7 @@ import {
   CLIENT_SECRET,
   TOKEN_URL,
   REDIRECT_URI,
+  IS_DEVELOPMENT,
 } from "../constants/apiConstants";
 
 // Spotify'dan Access Token almak için Client Credentials Flow
@@ -21,12 +22,16 @@ const getAccessToken = async () => {
     if (data.access_token) {
       return data.access_token;
     } else {
-      console.error("Error fetching access token:", data);
-      throw new Error("Failed to retrieve access token");
+      if (IS_DEVELOPMENT) {
+        console.error("Error fetching access token:", data);
+        throw new Error("Failed to retrieve access token");
+      }
     }
   } catch (error) {
-    console.error("Error in getAccessToken:", error);
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error("Error in getAccessToken:", error);
+      throw error;
+    }
   }
 };
 
@@ -64,16 +69,22 @@ const getTop50GlobalPlaylist = async (accessToken) => {
       },
     });
     if (!response.ok) {
-      throw new Error(
-        `Spotify API Error: ${response.status} ${response.statusText}`
-      );
+      if (IS_DEVELOPMENT) {
+        throw new Error(
+          `Spotify API Error: ${response.status} ${response.statusText}`
+        );
+      }
     }
     const data = await response.json();
-    console.log("Spotify API Response:", JSON.stringify(data, null, 2)); // Log the full response
+    if (IS_DEVELOPMENT) {
+      console.log("Spotify API Response:", JSON.stringify(data, null, 2)); // Log the full response
+    }
     return data.items;
   } catch (error) {
-    console.error("Error in getTop50GlobalPlaylist:", error);
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error("Error in getTop50GlobalPlaylist:", error);
+      throw error;
+    }
   }
 };
 
@@ -92,10 +103,11 @@ const getTopArtistsByPopularity = async (accessToken) => {
   try {
     const tracks = await getTop50GlobalPlaylist(accessToken);
 
-    if (!tracks || !Array.isArray(tracks)) {
-      throw new Error("Invalid tracks data received from Spotify API");
+    if (IS_DEVELOPMENT) {
+      if (!tracks || !Array.isArray(tracks)) {
+        throw new Error("Invalid tracks data received from Spotify API");
+      }
     }
-
     // Benzersiz sanatçı ID'lerini çek
     const artistIds = [
       ...new Set(
@@ -112,9 +124,11 @@ const getTopArtistsByPopularity = async (accessToken) => {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Spotify API Error: ${response.status} ${response.statusText}`
-      );
+      if (IS_DEVELOPMENT) {
+        throw new Error(
+          `Spotify API Error: ${response.status} ${response.statusText}`
+        );
+      }
     }
 
     const data = await response.json();
@@ -124,7 +138,9 @@ const getTopArtistsByPopularity = async (accessToken) => {
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 10);
   } catch (error) {
-    console.error("Error in getTopArtistsByPopularity:", error);
+    if (IS_DEVELOPMENT) {
+      console.error("Error in getTopArtistsByPopularity:", error);
+    }
     return [];
   }
 };

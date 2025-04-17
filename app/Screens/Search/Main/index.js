@@ -24,6 +24,7 @@ import {
 } from "../../../api/spotify";
 import { searchPeople } from "../../../api/backend";
 import ArtistProfile from "../../Profile/ArtistProfile/index";
+import { IS_DEVELOPMENT } from "../../../constants/apiConstants";
 
 // Create a Stack Navigator for the SearchScreen
 const Stack = createStackNavigator();
@@ -58,14 +59,18 @@ function SearchScreen() {
       try {
         const token = await getAccessToken();
         setAccessToken(token);
-        console.log("Access Token Fetched:", token);
-
         const allArtists = await getTopArtistsByPopularity(token);
-        console.log("Top Artists Fetched:", allArtists);
+
+        if (IS_DEVELOPMENT) {
+          console.log("Access Token Fetched:", token);
+          console.log("Top Artists Fetched:", allArtists);
+        }
 
         setTopArtists(allArtists.slice(0, 5));
       } catch (error) {
-        console.error("Error fetching access token or top artists:", error);
+        if (IS_DEVELOPMENT) {
+          console.error("Error fetching access token or top artists:", error);
+        }
       }
     };
 
@@ -97,7 +102,9 @@ function SearchScreen() {
       try {
         await fetchResults(searchText); // Fetch results for the new option
       } catch (error) {
-        console.error("Error fetching results:", error);
+        if (IS_DEVELOPMENT) {
+          console.error("Error fetching results:", error);
+        }
       } finally {
         setIsLoading(false); // Reset loading state
       }
@@ -143,7 +150,9 @@ function SearchScreen() {
         await saveSearchQuery(text);
       }
     } catch (error) {
-      console.error("Search Error:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Search Error:", error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -179,7 +188,9 @@ function SearchScreen() {
         setRecentSearches(history);
       }, 3000);
     } catch (error) {
-      console.error("Failed to save search history:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to save search history:", error);
+      }
     }
   };
 
@@ -189,7 +200,9 @@ function SearchScreen() {
       const history = await AsyncStorage.getItem(historyKey);
       setRecentSearches(history ? JSON.parse(history) : []);
     } catch (error) {
-      console.error("Failed to load search history:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to load search history:", error);
+      }
     }
   };
 
@@ -204,7 +217,9 @@ function SearchScreen() {
       await AsyncStorage.setItem(historyKey, JSON.stringify(history));
       setRecentSearches(history);
     } catch (error) {
-      console.error("Failed to delete search history item:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to delete search history item:", error);
+      }
     }
   };
 
@@ -214,7 +229,9 @@ function SearchScreen() {
       await AsyncStorage.removeItem(historyKey);
       setRecentSearches([]);
     } catch (error) {
-      console.error("Failed to clear search history:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to clear search history:", error);
+      }
     }
   };
 
@@ -223,26 +240,41 @@ function SearchScreen() {
     handleSearch(query);
   };
 
+  const handleReset = () => {
+    setSearchText("");
+    setSearchResults([]);
+    setIsFocused(false);
+    setOffset(0);
+    setSelectedOption("Artists");
+  };
+
   const handleAlbumClick = (album) => {
     saveSearchQuery(album.name);
-    navigation.navigate("Screens/Review/Entry/index", { selectedAlbum: album });
+    navigation.navigate("Screens/Review/Entry/index", {
+      selectedAlbum: JSON.stringify(album),
+      isUpdateFlow: false,
+    });
+    handleReset();
   };
 
   const handleUserClick = (user) => {
     navigation.navigate("Screens/Profile/Profile/index", { userId: user.id });
+    handleReset();
   };
 
   const handleArtistClick = (artist) => {
-    console.log("Artist Data:", artist); // Log the artist object
-    console.log("Artist ID:", artist.id); // Log the artist ID
-    console.log("Artist Name:", artist.name); // Log the artist name
-    console.log("Artist Image:", artist.images?.[0]?.url); // Log the artist image URL
-
+    if (IS_DEVELOPMENT) {
+      console.log("Artist Data:", artist); // Log the artist object
+      console.log("Artist ID:", artist.id); // Log the artist ID
+      console.log("Artist Name:", artist.name); // Log the artist name
+      console.log("Artist Image:", artist.images?.[0]?.url); // Log the artist image URL
+    }
     navigation.navigate("ArtistProfile", {
       artistId: artist.id,
       artistName: artist.name,
       artistImage: artist.images?.[0]?.url || null,
     });
+    handleReset();
   };
 
   return (

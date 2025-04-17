@@ -129,11 +129,13 @@ export default function AuthenticationSettings() {
       }
 
       // Profil bilgileri güncellemesi
-      await updateUserProfile(userId, profile); // ID'si 1 olan kullanıcı
+      await updateUserProfile(userId, profile);
 
       Alert.alert("Success", "Profile updated successfully!");
     } catch (error) {
-      console.error("Update Error:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Update Error:", error);
+      }
       Alert.alert("Error", "Failed to update profile");
     }
   };
@@ -287,8 +289,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#1E1E1E",
     paddingTop: 70,
-}
-,
+  },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { useRoute } from "@react-navigation/native"; // Import useRoute
+import { RefreshControl } from "react-native";
 import {
   View,
   Text,
@@ -21,7 +22,10 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { searchAlbums, getAccessToken } from "../../../api/spotify";
 import { Dimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BACKEND_REVIEW_URL } from "../../../constants/apiConstants";
+import {
+  BACKEND_REVIEW_URL,
+  IS_DEVELOPMENT,
+} from "../../../constants/apiConstants";
 import { AuthContext } from "../../../context/AuthContext";
 
 /*
@@ -33,10 +37,10 @@ import { AuthContext } from "../../../context/AuthContext";
 export default function ReviewScreen() {
   const { userId } = useContext(AuthContext); // Get userId from AuthContext
   const route = useRoute(); // Use the useRoute hook to access the route object
-  const [selectedAlbum, setSelectedAlbum] = useState(
-    route.params?.selectedAlbum || null
-  );
-
+  const { selectedAlbum: selectedAlbumRaw, reviewToUpdate: reviewToUpdateRaw } =
+    route.params || {};
+  const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [reviewToUpdate, setReviewToUpdate] = useState(null); // en üstte
   const [rating, setRating] = useState(0);
   const starSize = 40; // Adjust star size as needed
   const starPadding = 10; // Space between stars
@@ -55,15 +59,59 @@ export default function ReviewScreen() {
   const [loading, setLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState([]);
   const [animation] = useState(new Animated.Value(0)); // Initial height is 0
-
+  const [refreshing, setRefreshing] = useState(false);
   const screenWidth = Dimensions.get("window").width;
   const [accessToken, setAccessToken] = useState(null);
+  const resetForm = () => {
+    setSelectedAlbum(null);
+    setReviewToUpdate(null);
+    setRating(0);
+    setReviewText("");
+    setDate(new Date());
+  };
 
   useEffect(() => {
-    if (route.params?.selectedAlbum) {
-      setSelectedAlbum(route.params.selectedAlbum);
+    const {
+      selectedAlbum: selectedAlbumRaw,
+      reviewToUpdate: reviewToUpdateRaw,
+      isUpdateFlow,
+    } = route.params || {};
+
+    if (isUpdateFlow === false) {
+      resetForm();
+    }    
+
+    if (selectedAlbumRaw && !isUpdateFlow) {
+      // Fresh review flow
+      try {
+        const parsedAlbum = JSON.parse(selectedAlbumRaw);
+        setSelectedAlbum(parsedAlbum);
+        setRating(0);
+        setReviewText("");
+        setDate(new Date());
+        setReviewToUpdate(null);
+      } catch (e) {
+        if (IS_DEVELOPMENT) console.error("Failed to parse selectedAlbum:", e);
+      }
+    } else if (reviewToUpdateRaw) {
+      // Update flow
+      try {
+        const parsedReview = JSON.parse(reviewToUpdateRaw);
+        setReviewToUpdate(parsedReview);
+        setRating(parsedReview.rating || 0);
+        setReviewText(parsedReview.comment || "");
+        setDate(new Date(parsedReview.createdAt));
+
+        // Ensure we have the album data for the review being updated
+        if (selectedAlbumRaw) {
+          const parsedAlbum = JSON.parse(selectedAlbumRaw);
+          setSelectedAlbum(parsedAlbum);
+        }
+      } catch (e) {
+        if (IS_DEVELOPMENT) console.error("Failed to parse reviewToUpdate:", e);
+      }
     }
-  }, [route.params?.selectedAlbum]);
+  }, [route.params]);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -71,7 +119,9 @@ export default function ReviewScreen() {
         const token = await getAccessToken();
         setAccessToken(token);
       } catch (error) {
-        console.error("Error fetching access token:", error);
+        if (IS_DEVELOPMENT) {
+          console.error("Error fetching access token:", error);
+        }
       }
     };
     fetchToken();
@@ -102,7 +152,9 @@ export default function ReviewScreen() {
       // ✅ Save the search query to history (now with delay & no duplicates)
       saveSearchQuery(searchQuery);
     } catch (error) {
-      console.error("🚨 Error searching for albums:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("🚨 Error searching for albums:", error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -210,7 +262,9 @@ export default function ReviewScreen() {
         setSearchHistory(history);
       }, 3000);
     } catch (error) {
-      console.error("Failed to save search history:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to save search history:", error);
+      }
     }
   };
 
@@ -225,7 +279,55 @@ export default function ReviewScreen() {
       await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
       setSearchHistory(history);
     } catch (error) {
-      console.error("Failed to delete search history item:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to delete search history item:", error);
+      }
+    }
+  };
+
+  const updateReview = async () => {
+    if (!selectedAlbum || !reviewToUpdate) {
+      alert("Missing album or review data.");
+      return;
+    }
+
+    if (rating === 0) {
+      alert("Please give a rating between 1 and 5.");
+      return;
+    }
+
+    try {
+      const reviewData = {
+        id: reviewToUpdate.id, // id burada gerekli
+        userId: userId,
+        spotifyId: selectedAlbum.id,
+        rating: rating,
+        comment: reviewText,
+        createdAt: date.toISOString(),
+      };
+
+      const response = await fetch(
+        `${BACKEND_REVIEW_URL}/review/update/${reviewToUpdate.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(reviewData),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to update review: ${response.statusText}`);
+      }
+
+      alert("Review updated successfully!");
+      resetForm();
+    } catch (error) {
+      if (IS_DEVELOPMENT) {
+        console.error("Error updating review:", error);
+      }
+      alert("An error occurred while updating your review.");
     }
   };
 
@@ -266,7 +368,9 @@ export default function ReviewScreen() {
       await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
       setSearchHistory(history);
     } catch (error) {
-      console.error("Failed to update search history with album:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to update search history with album:", error);
+      }
     }
   };
 
@@ -278,7 +382,9 @@ export default function ReviewScreen() {
           setSearchHistory(JSON.parse(history));
         }
       } catch (error) {
-        console.error("❌ Failed to load search history:", error);
+        if (IS_DEVELOPMENT) {
+          console.error("❌ Failed to load search history:", error);
+        }
       }
     };
 
@@ -290,7 +396,9 @@ export default function ReviewScreen() {
       await AsyncStorage.removeItem(SEARCH_HISTORY_KEY);
       setSearchHistory([]); // Update state immediately
     } catch (error) {
-      console.error("Failed to clear search history:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to clear search history:", error);
+      }
     }
   };
 
@@ -327,23 +435,47 @@ export default function ReviewScreen() {
       }
 
       alert("Review saved successfully!");
-      setSelectedAlbum(null);
-      setRating(0);
-      setReviewText("");
+      resetForm();
     } catch (error) {
-      console.error("Error saving review:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Error saving review:", error);
+      }
       alert(
-        "An error occurred while saving your review. Check console for details."
+        "An error occurred while saving your review. Please try again later."
       );
     }
   };
 
+  const onRefresh = () => {
+    setRefreshing(true);
+
+    // formu sıfırla
+    setSelectedAlbum(null);
+    setReviewToUpdate(null);
+    setRating(0);
+    setReviewText("");
+    setDate(new Date());
+    setSearchQuery("");
+    setSearchResults([]);
+
+    // 1 saniye sonra refreshing'i false yap
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
       {/* Album Selection Button */}
       <TouchableOpacity
-        onPress={() => setModalVisible(true)}
-        style={styles.albumSelector}
+        onPress={() => {
+          if (!reviewToUpdate) setModalVisible(true);
+        }}
+        disabled={!!reviewToUpdate}
+        style={[styles.albumSelector, reviewToUpdate]}
       >
         {selectedAlbum ? (
           <View style={styles.albumInfo}>
@@ -362,7 +494,9 @@ export default function ReviewScreen() {
                 </Text>
               </View>
               <Text style={styles.albumYear}>
-                {selectedAlbum.release_date.slice(0, 4)}
+                {selectedAlbum?.release_date
+                  ? selectedAlbum.release_date.slice(0, 4)
+                  : "Year Unknown"}
               </Text>
             </View>
           </View>
@@ -434,10 +568,16 @@ export default function ReviewScreen() {
         onChangeText={setReviewText}
       />
 
-      {/* Save Button */}
-      <TouchableOpacity style={styles.saveButton} onPress={saveReview}>
-        <Text style={styles.saveButtonText}>Save</Text>
-      </TouchableOpacity>
+      {/* Save/Update Buttons */}
+      {reviewToUpdate ? (
+        <TouchableOpacity style={styles.updateButton} onPress={updateReview}>
+          <Text style={styles.buttonText}>Update</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity style={styles.saveButton} onPress={saveReview}>
+          <Text style={styles.buttonText}>Save</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Album Search Modal */}
       <Modal visible={isModalVisible} transparent animationType="slide">
@@ -750,4 +890,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   dateText: { color: "white", textAlign: "center" },
+  saveButton: {
+    backgroundColor: "#007AFF",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  updateButton: {
+    backgroundColor: "#4CAF50", // Different color for update
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  buttonText: {
+    color: "white",
+    fontWeight: "bold",
+  },
 });

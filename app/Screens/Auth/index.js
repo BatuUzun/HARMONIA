@@ -13,7 +13,10 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { AuthContext } from "../../context/AuthContext"; // Import AuthContext
-import { BACKEND_CREDENTIALS_URL } from "../../constants/apiConstants";
+import {
+  BACKEND_CREDENTIALS_URL,
+  IS_DEVELOPMENT,
+} from "../../constants/apiConstants";
 
 export default function Login() {
   const router = useRouter();
@@ -56,8 +59,9 @@ export default function Login() {
 
       const result = await response.json();
       if (response.ok) {
-        console.log("Login successful:", result);
-
+        if (IS_DEVELOPMENT) {
+          console.log("Login successful:", result);
+        }
         if (!result.isVerified) {
           // Kullanıcı doğrulanmamışsa VerificationSettings ekranına yönlendir
           router.replace({
@@ -70,12 +74,16 @@ export default function Login() {
           router.replace("Screens/Home/Feed"); //todo
         }
       } else {
-        const error = await response.text();
-        console.error("Login error:", error);
+        if (IS_DEVELOPMENT) {
+          const error = await response.text();
+          console.error("Login error:", error);
+        }
         Alert.alert("Error", error || "Invalid credentials. Try again.");
       }
     } catch (error) {
-      console.error("Login Error:", error);
+      if (IS_DEVELOPMENT) {
+        console.error("Login Error:", error);
+      }
       Alert.alert("Error", "Something went wrong. Please try again.");
     }
   };

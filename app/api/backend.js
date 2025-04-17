@@ -4,6 +4,7 @@ import {
   BACKEND_SEARCH_PROFILE_URL,
   BACKEND_REVIEW_URL,
   BACKEND_REVIEW_LIKE_URL,
+  IS_DEVELOPMENT,
 } from "../constants/apiConstants";
 
 const searchPeople = async (username) => {
@@ -15,14 +16,18 @@ const searchPeople = async (username) => {
         params: { username },
       }
     );
-    console.log("✅ API Response:", response.data);
+    if (IS_DEVELOPMENT) {
+      console.log("✅ API Response:", response.data);
+    }
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ People Search Error:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ People Search Error:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -32,13 +37,17 @@ const getUserProfile = async (id) => {
     const response = await axios.get(
       `${BACKEND_PROFILE_API_URL}/profile-api/get-user-profile/${id}`
     );
-    console.log("✅ Fetch User Profile Response:", response.data);
+    if (IS_DEVELOPMENT) {
+      console.log("✅ Fetch User Profile Response:", response.data);
+    }
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Fetch User Profile Error:",
-      error.response?.data || error.message
-    );
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Fetch User Profile Error:",
+        error.response?.data || error.message
+      );
+    }
     throw error;
   }
 };
@@ -50,14 +59,18 @@ const updateUserProfile = async (id, profileData) => {
       `${BACKEND_PROFILE_API_URL}/profile-api/update-profile/${id}`,
       profileData
     );
-    console.log("✅ Update User Profile Response:", response.data);
+    if (IS_DEVELOPMENT) {
+      console.log("✅ Update User Profile Response:", response.data);
+    }
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Update User Profile Error:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Update User Profile Error:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -69,14 +82,18 @@ const getUserReview = async (userId, spotifyId) => {
         params: { userId, spotifyId },
       }
     );
-    console.log("✅ Get User Review Response:", response.data);
+    if (IS_DEVELOPMENT) {
+      console.log("✅ Get User Review Response:", response.data);
+    }
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Get User Review Error:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Get User Review Error:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -85,17 +102,21 @@ const getAverageRating = async (spotifyId) => {
     const response = await axios.get(
       `${BACKEND_REVIEW_URL}/review/calculate/spotify/${spotifyId}/average-rating`
     );
-    console.log(
-      `✅ Get Average Rating for Spotify ID ${spotifyId}:`,
-      response.data
-    );
+    if (IS_DEVELOPMENT) {
+      console.log(
+        `✅ Get Average Rating for Spotify ID ${spotifyId}:`,
+        response.data
+      );
+    }
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Get Average Rating Error:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Get Average Rating Error:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -106,11 +127,13 @@ const isReviewLikedByUser = async (reviewId, userId) => {
     );
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Error checking if review is liked:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error checking if review is liked:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -125,11 +148,13 @@ const likeReview = async (reviewId, userId) => {
     );
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Error liking review:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error liking review:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -143,11 +168,13 @@ const unlikeReview = async (reviewId, userId) => {
     );
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Error unliking review:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error unliking review:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -158,11 +185,13 @@ const getLikeCount = async (reviewId) => {
     );
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Error getting like count:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error getting like count:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
@@ -173,20 +202,26 @@ const getReviewsByAlbumIds = async (albumIds) => {
       const response = await axios.get(
         `${BACKEND_REVIEW_URL}/review/get-reviews/spotify/${albumId}`
       );
-      console.log(
-        `✅ Get Reviews for Album ID ${albumId}:`,
-        response.data.content
-      );
+      if (IS_DEVELOPMENT) {
+        console.log(
+          `✅ Get Reviews for Album ID ${albumId}:`,
+          response.data.content
+        );
+      }
       reviews.push(...response.data.content);
     }
-    console.log("✅ Get Reviews By Album IDs Response:", reviews);
+    if (IS_DEVELOPMENT) {
+      console.log("✅ Get Reviews By Album IDs Response:", reviews);
+    }
     return reviews;
   } catch (error) {
-    console.error(
-      "❌ Get Reviews By Album IDs Error:",
-      error.response?.data || error.message
-    );
-    throw error;
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Get Reviews By Album IDs Error:",
+        error.response?.data || error.message
+      );
+      throw error;
+    }
   }
 };
 
