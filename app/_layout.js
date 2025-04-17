@@ -22,6 +22,7 @@ function Layout() {
   const { isAuthenticated } = useContext(AuthContext);
   const [isSpotifyAvailable, setIsSpotifyAvailable] = useState(true);
   const [checkingSpotify, setCheckingSpotify] = useState(true);
+  const { userId } = useContext(AuthContext);
 
   const checkSpotifyAPI = async () => {
     setCheckingSpotify(true);
@@ -138,7 +139,12 @@ function Layout() {
               size={26}
               color="white"
               style={{ marginRight: 20 }}
-              onPress={() => router.push("/Screens/Chat")}
+              onPress={() =>
+                router.push({
+                  pathname: "/Screens/Chat",
+                  params: { userId: userId },
+                })
+              }
             />
           ),
         }}

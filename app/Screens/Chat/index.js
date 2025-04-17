@@ -1,10 +1,13 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 
 export default function ChatScreen() {
+  const { userId } = useLocalSearchParams();
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Chat Screen</Text>
+      <Text style={styles.userIdText}>User ID: {userId}</Text>
     </View>
   );
 }
@@ -22,5 +25,10 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "bold",
     marginBottom: 10,
+  },
+  userIdText: {
+    color: "white",
+    fontSize: 16,
+    marginTop: 10,
   },
 });
