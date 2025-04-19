@@ -25,5 +25,8 @@ export const BACKEND_REVIEW_LIKE_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_SEARCH_PROFILE_URL = `${IP_ADDRESS}:8765`;
 export const BACKEND_USER_FOLLOW_URL = `${IP_ADDRESS}:8765`;
 
+export const BACKEND_IMAGE_DOWNLOAD_URL = `${IP_ADDRESS}:8765`; // Replace with your actual backend address
+export const CONVERSATION_URL = `${IP_ADDRESS}:8765`; // Replace with your actual backend address
+
 // Development or Production
 export const IS_DEVELOPMENT = false; // true: Development, false: Production

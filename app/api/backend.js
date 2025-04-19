@@ -5,6 +5,8 @@ import {
   BACKEND_REVIEW_URL,
   BACKEND_REVIEW_LIKE_URL,
   IS_DEVELOPMENT,
+  BACKEND_IMAGE_DOWNLOAD_URL,
+  CONVERSATION_URL,
 } from "../constants/apiConstants";
 
 const searchPeople = async (username) => {
@@ -225,6 +227,52 @@ const getReviewsByAlbumIds = async (albumIds) => {
   }
 };
 
+const getMessagesByConversationId = async (conversationId, cursor = null) => {
+  try {
+    const url = cursor
+      ? `${CONVERSATION_URL}/conversation/${conversationId}?cursor=${encodeURIComponent(
+          cursor
+        )}`
+      : `${CONVERSATION_URL}/conversation/${conversationId}`;
+
+    const response = await axios.get(url);
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Get Messages Error:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+const getProfileImageBase64 = async (fileName) => {
+  try {
+    const response = await fetch(
+      `${BACKEND_IMAGE_DOWNLOAD_URL}/profile-picture-downloader/download/${fileName}`
+    );
+    const base64 = await response.text(); // because your endpoint returns plain text
+    return `data:image/png;base64,${base64}`;
+  } catch (error) {
+    console.error("Error fetching image:", error);
+    return null;
+  }
+};
+
+const getConversationSummaries = async (userId) => {
+  try {
+    const response = await fetch(
+      `${CONVERSATION_URL}/conversation-summaries?userId=${userId}`
+    );
+    return await response.json();
+  } catch (err) {
+    console.error("❌ Failed to fetch conversation summaries:", err);
+    return [];
+  }
+};
+
 export {
   searchPeople,
   getUserProfile,
@@ -236,4 +284,7 @@ export {
   unlikeReview,
   getLikeCount,
   getReviewsByAlbumIds,
+  getProfileImageBase64,
+  getConversationSummaries,
+  getMessagesByConversationId,
 };

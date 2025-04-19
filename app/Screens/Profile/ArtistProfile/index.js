@@ -29,15 +29,29 @@ import { createStackNavigator } from "@react-navigation/stack";
 
 const { width } = Dimensions.get("window");
 
+const getCommunityRatingColor = (rating) => {
+  if (rating >= 4) {
+    return "green"; // Yüksek puanlar için yeşil
+  } else if (rating >= 2) {
+    return "orange"; // Orta puanlar için turuncu
+  } else {
+    return "red"; // Düşük puanlar için kırmızı
+  }
+};
+
 function ArtistProfile({ route, navigation }) {
   const { artistId, artistName, artistImage } = route.params || {};
+
+  console.log("ArtistProfile - Artist ID:", artistId); // Log the artist ID
+  console.log("ArtistProfile - Artist Name:", artistName); // Log the artist name
+  console.log("ArtistProfile - Artist Image:", artistImage); // Log the artist image URL
   const [albums, setAlbums] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [likedReviews, setLikedReviews] = useState({});
   const [usernames, setUsernames] = useState({});
-  const [selectedTab, setSelectedTab] = useState("Profile");
+  const [selectedTab, setSelectedTab] = useState("Artist Profile");
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [averageRatings, setAverageRatings] = useState({});
@@ -48,9 +62,7 @@ function ArtistProfile({ route, navigation }) {
   // Fetch albums when artistId changes
   useEffect(() => {
     if (!artistId) {
-      if (IS_DEVELOPMENT) {
-        console.error("Artist ID is undefined");
-      }
+      console.error("Artist ID is undefined");
       return;
     }
     fetchAlbums();
@@ -58,51 +70,37 @@ function ArtistProfile({ route, navigation }) {
 
   const fetchAlbums = async () => {
     try {
+      console.log("Fetching albums for artistId:", artistId); // Log artistId
       const albumsData = await getArtistAlbums(artistId);
-
-      if (IS_DEVELOPMENT) {
-        console.log("Fetching albums for artistId:", artistId); // Log artistId
-        console.log("Albums data received:", albumsData); // Log the response
-      }
+      console.log("Albums data received:", albumsData); // Log the response
 
       if (!albumsData || !Array.isArray(albumsData)) {
-        if (IS_DEVELOPMENT) {
-          console.error("Invalid albums data:", albumsData);
-        }
+        console.error("Invalid albums data:", albumsData);
         return;
       }
 
       setAlbums(albumsData);
       fetchAverageRatings(albumsData);
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error fetching albums:", error);
-      }
+      console.error("Error fetching albums:", error);
     }
   };
 
   const fetchAverageRatings = async (albums) => {
     try {
       const ratingsData = {};
-      if (IS_DEVELOPMENT) {
-        console.log("Albums received:", albums); // Debugging
-      }
+      console.log("Albums received:", albums); // Debugging
 
       for (const album of albums) {
-        if (IS_DEVELOPMENT) {
-          console.log("Processing album:", album); // Debugging
-        }
+        console.log("Processing album:", album); // Debugging
         if (!album.id) {
-          if (IS_DEVELOPMENT) {
-            console.error("Album ID is undefined:", album);
-          }
+          console.error("Album ID is undefined:", album);
           continue; // Skip this album
         }
 
         const averageRating = await getAverageRating(album.id);
-        if (IS_DEVELOPMENT) {
-          console.log(`Average rating for album ${album.id}:`, averageRating);
-        }
+        console.log(`Average rating for album ${album.id}:`, averageRating);
+
         ratingsData[album.id] =
           averageRating !== undefined &&
           typeof averageRating === "number" &&
@@ -112,9 +110,7 @@ function ArtistProfile({ route, navigation }) {
       }
       setAverageRatings(ratingsData);
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error fetching average ratings:", error);
-      }
+      console.error("Error fetching average ratings:", error);
     }
   };
 
@@ -129,9 +125,7 @@ function ArtistProfile({ route, navigation }) {
       await fetchLikedReviews(reviewsData); // Yeni fonksiyon eklendi
       fetchUsernames(reviewsData);
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error fetching reviews:", error);
-      }
+      console.error("Error fetching reviews:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -139,10 +133,14 @@ function ArtistProfile({ route, navigation }) {
   }, [albums]);
 
   useEffect(() => {
-    if (selectedTab === "Review") {
+    if (selectedTab === "Review" || selectedTab === "Artist Profile") {
       fetchReviews();
     }
   }, [selectedTab, fetchReviews]);
+
+  useEffect(() => {
+    fetchReviews(); // Fetch reviews after albums are loaded
+  }, [albums]);
 
   const fetchLikedReviews = async (reviewsData) => {
     let likedReviewsData = {};
@@ -151,30 +149,23 @@ function ArtistProfile({ route, navigation }) {
       reviewsData.map(async (review) => {
         try {
           const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${userId}`;
-
-          if (IS_DEVELOPMENT) {
-            console.log(`🔍 Fetching liked status from: ${url}`);
-          }
+          console.log(`🔍 Fetching liked status from: ${url}`);
 
           const response = await fetch(url);
 
           if (!response.ok) {
-            if (IS_DEVELOPMENT) {
-              console.error(
-                `❌ API Error for review ${review.id}:`,
-                response.status,
-                response.statusText
-              );
-            }
+            console.error(
+              `❌ API Error for review ${review.id}:`,
+              response.status,
+              response.statusText
+            );
             likedReviewsData[review.id] = null;
             return;
           }
 
           const text = await response.text();
           if (!text) {
-            if (IS_DEVELOPMENT) {
-              console.warn(`⚠️ Empty response for review ${review.id}`);
-            }
+            console.warn(`⚠️ Empty response for review ${review.id}`);
             likedReviewsData[review.id] = null;
             return;
           }
@@ -184,12 +175,10 @@ function ArtistProfile({ route, navigation }) {
           // 🔥 Eğer `data.id` null ise, bu review beğenilmemiş demektir
           likedReviewsData[review.id] = data.id ? data.id : null;
         } catch (error) {
-          if (IS_DEVELOPMENT) {
-            console.error(
-              `❌ Error fetching liked status for review ${review.id}:`,
-              error
-            );
-          }
+          console.error(
+            `❌ Error fetching liked status for review ${review.id}:`,
+            error
+          );
           likedReviewsData[review.id] = null;
         }
       })
@@ -210,12 +199,10 @@ function ArtistProfile({ route, navigation }) {
           const data = await response.json();
           likeCountsData[review.id] = data.success ? data.data : 0;
         } catch (error) {
-          if (IS_DEVELOPMENT) {
-            console.error(
-              `Error fetching like count for review ${review.id}:`,
-              error
-            );
-          }
+          console.error(
+            `Error fetching like count for review ${review.id}:`,
+            error
+          );
           likeCountsData[review.id] = 0;
         }
       })
@@ -223,19 +210,18 @@ function ArtistProfile({ route, navigation }) {
 
     setLikeCounts(likeCountsData);
   };
-
   const fetchUsernames = async (reviews) => {
     try {
       const usernamesData = {};
-      for (const review of reviews) {
-        const userProfile = await getUserProfile(review.userId);
-        usernamesData[review.userId] = userProfile.username;
-      }
+      await Promise.all(
+        reviews.map(async (review) => {
+          const userProfile = await getUserProfile(review.userId);
+          usernamesData[review.userId] = userProfile.username;
+        })
+      );
       setUsernames(usernamesData);
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error fetching usernames:", error);
-      }
+      console.error("Error fetching usernames:", error);
     }
   };
 
@@ -244,9 +230,7 @@ function ArtistProfile({ route, navigation }) {
       const tracksData = await getAlbumTracks(albumId);
       setTracks(tracksData);
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error fetching album tracks:", error);
-      }
+      console.error("Error fetching album tracks:", error);
     }
   };
 
@@ -283,9 +267,7 @@ function ArtistProfile({ route, navigation }) {
 
           await fetchReviews(); // 🔥 Refresh işlemi
         } else {
-          if (IS_DEVELOPMENT) {
-            console.error("Unlike işlemi başarısız:", await response.json());
-          }
+          console.error("Unlike işlemi başarısız:", await response.json());
         }
       } else {
         // Like işlemi
@@ -299,9 +281,8 @@ function ArtistProfile({ route, navigation }) {
         );
 
         const data = await response.json();
-        if (IS_DEVELOPMENT) {
-          console.log("✅ Like işlemi response:", data); // API yanıtını logla
-        }
+        console.log("✅ Like işlemi response:", data); // API yanıtını logla
+
         if (response.ok || data.success) {
           // 🔥 Backend yanlış response dönse bile başarı say
           setLikedReviews((prev) => ({
@@ -318,9 +299,7 @@ function ArtistProfile({ route, navigation }) {
         }
       }
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Like/Unlike işlemi sırasında hata oluştu:", error);
-      }
+      console.error("Like/Unlike işlemi sırasında hata oluştu:", error);
     } finally {
       setRefreshing(true); // 🔥 Refresh tetikle
     }
@@ -333,39 +312,111 @@ function ArtistProfile({ route, navigation }) {
   }, [refreshing]);
 
   const getUserRatingForAlbum = (albumId) => {
-    const userReview = reviews.find(
-      (review) => review.userId === userId && review.spotifyId === albumId
-    );
+    if (!userId || !reviews || !Array.isArray(reviews)) return null;
+
+    const userReview = reviews.find((review) => {
+      const reviewAlbumId =
+        review.spotifyId || review.albumId || review.album?.id;
+      return (
+        String(review.userId) === String(userId) &&
+        String(reviewAlbumId) === String(albumId)
+      );
+    });
+
+    console.log(`🎯 Album ID: ${albumId}`);
+    console.log(`👤 User ID: ${userId}`);
+    console.log(`🧾 Matching Review:`, userReview);
+
     return userReview ? userReview.rating : null;
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!artistId) return;
+
+      try {
+        setLoading(true);
+        const albumsData = await getArtistAlbums(artistId);
+        setAlbums(albumsData);
+
+        const albumIds = albumsData.map((album) => album.id);
+        const reviewsData = await getReviewsByAlbumIds(albumIds);
+        setReviews(reviewsData);
+
+        await fetchAverageRatings(albumsData);
+        await fetchLikeCounts(reviewsData);
+        await fetchLikedReviews(reviewsData);
+        await fetchUsernames(reviewsData);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [artistId, userId]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchAlbums(); // Fetch updated albums
+      await fetchReviews(); // Fetch updated reviews
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Albüm isimlerini kısaltan yardımcı fonksiyon
+  const truncateAlbumName = (name, maxLength = 10) => {
+    if (name.length > maxLength) {
+      return name.substring(0, maxLength) + "...";
+    }
+    return name;
   };
 
   const renderAlbum = ({ item }) => {
     const userRating = getUserRatingForAlbum(item.id);
-    const averageRating = averageRatings[item.id];
-    if (IS_DEVELOPMENT) {
-      console.log(
-        `Rendering album ${item.id} with average rating:`,
-        averageRating
-      ); // Debug log
-    }
-    const truncateAlbumName = (name) => {
-      const words = name.split(" ");
-      if (words.length > 3) {
-        return words.slice(0, 3).join(" ") + "...";
-      }
-      return name;
-    };
+
+    const renderStars = (rating) => (
+      <View style={{ flexDirection: "row", justifyContent: "center" }}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <FontAwesome
+            key={star}
+            name={star <= rating ? "star" : "star-o"}
+            size={14}
+            color="white"
+          />
+        ))}
+      </View>
+    );
 
     return (
-      <View style={styles.albumRow}>
-        <View style={styles.albumColumn}>
-          <TouchableOpacity onPress={() => handleAlbumPress(item.id)}>
-            <View style={styles.albumContainer}>
+      <View
+        style={[
+          styles.albumRow,
+          {
+            flexDirection: "column",
+            alignItems: "flex-start",
+            paddingVertical: 10,
+          },
+        ]}
+      >
+        <View
+          style={{ flexDirection: "row", alignItems: "center", width: "100%" }}
+        >
+          <TouchableOpacity
+            onPress={() => handleAlbumPress(item.id)}
+            style={{ flex: 2 }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Image
                 source={{ uri: item.images[0].url }}
                 style={styles.albumImage}
               />
-              <View style={styles.albumInfo}>
+              <View style={{ marginLeft: 10 }}>
                 <Text style={styles.albumName}>
                   {truncateAlbumName(item.name)}
                 </Text>
@@ -375,50 +426,60 @@ function ArtistProfile({ route, navigation }) {
               </View>
             </View>
           </TouchableOpacity>
-          {selectedAlbum === item.id && (
-            <FlatList
-              data={tracks}
-              renderItem={renderTrack}
-              keyExtractor={(item) => item.id}
-              style={styles.trackList}
-            />
-          )}
-        </View>
-        <View style={styles.ratingColumn}>
-          {userRating ? (
-            <View style={styles.ratingContainer}>
-              <View style={styles.starPicker}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <FontAwesome
-                    key={star}
-                    name="star"
-                    size={14}
-                    color={star <= userRating ? "yellow" : "gray"}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => {
-                // Navigate to ReviewScreen with the selected album
-                navigation.navigate("Screens/Review/Entry/index", {
-                  selectedAlbum: item,
-                });
+
+          <View
+            style={[styles.ratingColumn, { flex: 1, alignItems: "center" }]}
+          >
+            {userRating !== null ? (
+              renderStars(userRating)
+            ) : (
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => {
+                  navigation.navigate("Screens/Review/Entry/index", {
+                    selectedAlbum: item,
+                  });
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={24} color="white" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View
+            style={[
+              styles.communityRatingColumn,
+              { flex: 1, alignItems: "center" },
+            ]}
+          >
+            <Text
+              style={{
+                ...styles.communityRating,
+                color: getCommunityRatingColor(
+                  typeof averageRatings[item.id] === "number" &&
+                    !isNaN(averageRatings[item.id])
+                    ? averageRatings[item.id]
+                    : 0
+                ),
               }}
             >
-              <Ionicons name="add-circle-outline" size={24} color="white" />
-            </TouchableOpacity>
-          )}
+              {typeof averageRatings[item.id] === "number" &&
+              !isNaN(averageRatings[item.id])
+                ? averageRatings[item.id].toFixed(1)
+                : "0.0"}
+            </Text>
+          </View>
         </View>
-        <View style={styles.communityRatingColumn}>
-          <Text style={styles.communityRating}>
-            {typeof averageRating === "number" && !isNaN(averageRating)
-              ? averageRating.toFixed(1)
-              : "N/A"}
-          </Text>
-        </View>
+
+        {selectedAlbum === item.id && tracks.length > 0 && (
+          <View style={{ marginTop: 10, width: "100%" }}>
+            {tracks.map((track) => (
+              <Text key={track.id} style={styles.trackName}>
+                {track.name}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
     );
   };
@@ -476,7 +537,7 @@ function ArtistProfile({ route, navigation }) {
     );
   };
 
-  const tabs = ["Profile", "Review"];
+  const tabs = ["Artist Profile", "Review"];
 
   return (
     <View style={styles.container}>
@@ -510,33 +571,66 @@ function ArtistProfile({ route, navigation }) {
       </TouchableOpacity>
       <View style={styles.profileContainer}>
         <Text style={styles.title}>{artistName}</Text>
-        {selectedTab === "Profile" && (
+        {selectedTab === "Artist Profile" && (
           <>
-            <View style={styles.headerRow}>
-              <Text style={styles.columnHeader}>Albums</Text>
-              <Text style={styles.columnHeader}>Your Rating</Text>
-              <Text style={styles.columnHeader}>Community Rating</Text>
+            <View
+              style={[
+                styles.headerRow,
+                {
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingVertical: 10,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.columnHeader, { flex: 2, textAlign: "left" }]}
+              >
+                Albums/Tracks
+              </Text>
+              <Text
+                style={[styles.columnHeader, { flex: 1, textAlign: "center" }]}
+              >
+                Your Rating
+              </Text>
+              <Text
+                style={[styles.columnHeader, { flex: 1, textAlign: "center" }]}
+              >
+                Community Rating
+              </Text>
             </View>
             <FlatList
               data={albums}
               renderItem={renderAlbum}
               keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: 20 }} // Add padding to the bottom
+              style={{ flex: 1 }} // Ensure the FlatList takes up the full height
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              }
             />
           </>
         )}
-        {selectedTab === "Review" && (
-          <FlatList
-            data={reviews}
-            keyExtractor={(item) => item.id.toString()}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={fetchReviews}
-              />
-            }
-            renderItem={renderReviewCard}
-          />
-        )}
+        {selectedTab === "Review" &&
+          (reviews.length > 0 ? (
+            <FlatList
+              data={reviews}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={fetchReviews}
+                />
+              }
+              renderItem={renderReviewCard}
+            />
+          ) : (
+            <View style={{ alignItems: "center", marginTop: 20 }}>
+              <Text style={{ color: "gray", fontSize: 16 }}>
+                There is no review for this artist.
+              </Text>
+            </View>
+          ))}
       </View>
     </View>
   );
@@ -581,6 +675,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   profileContainer: {
+    flex: 1, // Ensure the container takes up the full height
     padding: 20,
   },
   title: {
@@ -596,11 +691,13 @@ const styles = StyleSheet.create({
   },
   albumRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 10,
+    paddingVertical: 10, // Daha fazla boşluk
   },
   albumColumn: {
     flex: 2,
+    alignItems: "flex-start",
   },
   ratingColumn: {
     flex: 1,
@@ -612,7 +709,7 @@ const styles = StyleSheet.create({
   },
   columnHeader: {
     color: "lightgray",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "bold",
     marginBottom: 5,
     marginHorizontal: 10,
@@ -633,12 +730,12 @@ const styles = StyleSheet.create({
   },
   albumName: {
     color: "white",
-    fontSize: 14,
+    fontSize: 12,
     maxWidth: 150,
   },
   albumYear: {
     color: "gray",
-    fontSize: 12,
+    fontSize: 11,
   },
   userRating: {
     color: "yellow",
@@ -690,13 +787,16 @@ const styles = StyleSheet.create({
   ratingContainer: {
     flexDirection: "column",
     alignItems: "center",
+    justifyContent: "center",
+    height: 50,
+    width: "100%", // Added
   },
   ratingText: {
-    color: "white",
-    marginRight: 5,
-  },
-  addButton: {
-    marginTop: 10,
+    color: "yellow",
+    fontSize: 14,
+    marginTop: 5,
+    fontWeight: "bold",
+    textAlign: "center", // Added
   },
   communityRating: {
     color: "yellow",
@@ -709,6 +809,10 @@ const styles = StyleSheet.create({
   likeText: {
     color: "white",
     marginLeft: 5,
+  },
+  addButton: {
+    marginTop: 5,
+    alignItems: "center",
   },
 });
 

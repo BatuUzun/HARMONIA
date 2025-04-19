@@ -186,6 +186,15 @@ function Layout() {
           headerTintColor: "white",
         }}
       />
+      <Tabs.Screen
+        name="Screens/Chat/ChatDetailScreen"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="Screens/Chat/ChatDetailScreenStyles"
+        options={{ href: null }}
+      />
+      <Tabs.Screen name="Screens/Chat/indexcss" options={{ href: null }} />
     </Tabs>
   );
 }
