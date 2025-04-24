@@ -86,6 +86,17 @@ export default function VerificationScreen() {
     }
 
     try {
+      // First, verify the email on the backend
+      const verifyResponse = await axios.put(
+        `${BACKEND_CREDENTIALS_URL}/credentials/verify-email`,
+        { email } // Send email in the request body
+      );
+
+      if (!verifyResponse.data) {
+        throw new Error("Email verification failed");
+      }
+
+      // Then proceed with login
       const loginResponse = await axios.post(
         `${BACKEND_CREDENTIALS_URL}/credentials/check-login-credentials`,
         {

@@ -25,9 +25,18 @@ import {
 import { searchPeople } from "../../../api/backend";
 import ArtistProfile from "../../Profile/ArtistProfile/index";
 import { IS_DEVELOPMENT } from "../../../constants/apiConstants";
+import { BACKEND_PROFILE_PICTURE_DOWNLOADER_URL } from "../../../constants/apiConstants";
 
 // Create a Stack Navigator for the SearchScreen
 const Stack = createStackNavigator();
+const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
+
+const getProfileImageUrl = (fileName) => {
+  if (!fileName || fileName === "default.png") {
+    return Image.resolveAssetSource(defaultProfileImage).uri;
+  }
+  return `https://harmonia-profile-images.s3.amazonaws.com/${fileName}`; // veya BACKEND_PROFILE_PICTURE_DOWNLOADER_URL
+};
 
 // Wrap the SearchScreen in a Stack Navigator
 export default function SearchStack() {
@@ -127,14 +136,16 @@ function SearchScreen() {
         results = await searchAlbums(accessToken, text, offset);
       } else if (selectedOption === "People") {
         const peopleResults = await searchPeople(text);
-        const bucketUrl = "https://harmonia-profile-images.s3.amazonaws.com";
+        const getProfileImageUrl = (fileName) => {
+          if (!fileName || fileName === "default.png") {
+            return Image.resolveAssetSource(defaultProfileImage).uri;
+          }
+          return `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${fileName}`;
+        };
 
         results = peopleResults.map((person) => {
           const imageUrl = person.profileImage;
-          const finalImageUrl =
-            imageUrl && imageUrl !== "default.png" && imageUrl !== null
-              ? imageUrl
-              : Image.resolveAssetSource(defaultProfileImage).uri;
+          const finalImageUrl = getProfileImageUrl(imageUrl);
 
           return {
             id: person.id,

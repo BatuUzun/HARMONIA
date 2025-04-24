@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { getUserProfile, updateUserProfile } from "../../api/backend";
 import * as ImagePicker from "expo-image-picker";
 import { AuthContext } from "../../context/AuthContext";
+import { BACKEND_PROFILE_PICTURE_DOWNLOADER_URL } from "../../constants/apiConstants";
 
 export default function AuthenticationSettings() {
   const router = useRouter();
@@ -27,7 +28,6 @@ export default function AuthenticationSettings() {
   // Kullanıcı profili durumu
   const [profile, setProfile] = useState({
     username: "",
-    description: "",
     bio: "",
     link: "",
     location: "",
@@ -44,7 +44,6 @@ export default function AuthenticationSettings() {
         const data = await getUserProfile(userId);
         setProfile({
           username: data.username || "",
-          description: data.description || "",
           bio: data.bio || "",
           link: data.link || "",
           location: data.location || "",
@@ -103,7 +102,15 @@ export default function AuthenticationSettings() {
     });
 
     if (!result.canceled) {
-      setProfile((prev) => ({ ...prev, profileImage: result.assets[0].uri }));
+      const s3FileName = await uploadImageToS3(result.assets[0].uri);
+      if (s3FileName) {
+        setProfile((prev) => ({
+          ...prev,
+          profileImage: s3FileName, // sadece dosya adı (örneğin: "123abc.jpg")
+        }));
+      } else {
+        Alert.alert("Error", "Profile photo upload failed.");
+      }
     }
   };
 
@@ -116,7 +123,46 @@ export default function AuthenticationSettings() {
     });
 
     if (!result.canceled) {
-      setProfile((prev) => ({ ...prev, profileImage: result.assets[0].uri }));
+      const s3FileName = await uploadImageToS3(result.assets[0].uri);
+      if (s3FileName) {
+        setProfile((prev) => ({
+          ...prev,
+          profileImage: s3FileName, // sadece dosya adını kaydediyoruz
+        }));
+      } else {
+        Alert.alert("Error", "Profile image upload failed");
+      }
+    }
+  };
+
+  const uploadImageToS3 = async (imageUri) => {
+    const formData = new FormData();
+    const fileName = imageUri.split("/").pop();
+    const fileType = fileName.split(".").pop();
+
+    formData.append("file", {
+      uri: imageUri,
+      name: fileName,
+      type: `image/${fileType}`,
+    });
+
+    try {
+      const response = await fetch(
+        `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/upload`,
+        {
+          method: "POST",
+          body: formData,
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      const data = await response.json();
+      return data.result; // unique filename string
+    } catch (error) {
+      console.error("S3 Upload Failed", error);
+      return null;
     }
   };
 
@@ -192,7 +238,12 @@ export default function AuthenticationSettings() {
               ) : profile.profileImage &&
                 profile.profileImage !== "default.png" ? (
                 <Image
-                  source={{ uri: profile.profileImage }}
+                  source={{
+                    uri:
+                      profile.profileImage === "default.png"
+                        ? Image.resolveAssetSource(defaultProfileImage).uri
+                        : `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${profile.profileImage}`,
+                  }}
                   style={styles.profileImage}
                 />
               ) : (
@@ -222,17 +273,6 @@ export default function AuthenticationSettings() {
               }
             />
 
-            {/* Description */}
-            <Text style={styles.label}>Description</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.description}
-              placeholder="Enter your description"
-              onChangeText={(text) =>
-                setProfile({ ...profile, description: text })
-              }
-            />
-
             {/* Bio */}
             <Text style={styles.label}>Bio</Text>
             <TextInput
@@ -244,7 +284,13 @@ export default function AuthenticationSettings() {
             />
 
             {/* Link */}
-            <Text style={styles.label}>Link</Text>
+            <Text style={styles.label}>
+              Link
+              <Text style={{ color: "#aaa" }}>
+                {" "}
+                (you can add your Spotify link)
+              </Text>
+            </Text>
             <TextInput
               style={styles.input}
               value={profile.link}

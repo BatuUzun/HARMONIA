@@ -62,16 +62,18 @@ export default function Login() {
         if (IS_DEVELOPMENT) {
           console.log("Login successful:", result);
         }
-        if (!result.isVerified) {
-          // Kullanıcı doğrulanmamışsa VerificationSettings ekranına yönlendir
+        
+        // Always check the verification status from the backend response
+        if (result.isVerified === false) {
+          // Only show verification screen if user is not verified
           router.replace({
             pathname: "/Screens/Auth/VerificationSettings",
             params: { email, password },
           });
         } else {
-          // Kullanıcı doğrulanmışsa Home ekranına yönlendir
+          // Proceed with login if verified
           await login(result.token, result.userId);
-          router.replace("Screens/Home/Feed"); //todo
+          router.replace("Screens/Home/Feed");
         }
       } else {
         if (IS_DEVELOPMENT) {

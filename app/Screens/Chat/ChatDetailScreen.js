@@ -6,6 +6,8 @@ import {
   Image,
   ActivityIndicator,
   TouchableOpacity,
+  TextInput,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import {
@@ -13,17 +15,26 @@ import {
   getProfileImageBase64,
 } from "../../api/backend";
 import styles from "./ChatDetailScreenStyles";
+import Ionicons from "react-native-vector-icons/Ionicons";
+import { Client } from "@stomp/stompjs";
+import SockJS from "sockjs-client";
+import { socketUrl } from "../../constants/apiConstants";
 
 export default function ChatDetailScreen() {
   const {
     conversationId,
     userId: rawUserId,
+    opponentId,
     opponentUsername,
     opponentProfileImage,
   } = useLocalSearchParams();
 
   const router = useRouter();
   const userIdRef = useRef(rawUserId);
+  const conversationIdRef = useRef(conversationId);
+  const stompClientRef = useRef(null);
+  const seenMessageIds = useRef(new Set());
+  const loadingRef = useRef(false);
   const hasMoreRef = useRef(true);
 
   const [messages, setMessages] = useState([]);
@@ -32,18 +43,83 @@ export default function ChatDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [opponentImageBase64, setOpponentImageBase64] = useState(null);
+  const [typedMessage, setTypedMessage] = useState("");
+
+  useEffect(() => {
+    if (rawUserId) {
+      userIdRef.current = rawUserId;
+    }
+  }, [rawUserId]);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  useEffect(() => {
+    const socket = new SockJS(`${socketUrl}?userId=${userIdRef.current}`);
+    const stompClient = new Client({
+      webSocketFactory: () => socket,
+      reconnectDelay: 5000,
+      onConnect: () => {
+        const destination = `/user/${userIdRef.current}/queue/messages`;
+        stompClient.subscribe(destination, (message) => {
+          const body = JSON.parse(message.body);
+
+          if ("messageId" in body && Object.keys(body).length === 1) {
+            // 🗑 Handle deletion
+            setMessages((prev) => prev.filter((m) => m.id !== body.messageId));
+            return;
+          }
+
+          const incomingId = String(body.conversationId);
+          const expectedId = String(conversationIdRef.current);
+          const isMine = String(body.senderId) === String(userIdRef.current);
+
+          const isSameOpponent =
+            !expectedId &&
+            (String(body.senderId) === String(opponentId) ||
+              String(body.receiverId) === String(opponentId));
+
+          const isMatchingConversation =
+            incomingId === expectedId || isSameOpponent;
+
+          if (isMatchingConversation && !seenMessageIds.current.has(body.id)) {
+            seenMessageIds.current.add(body.id);
+            setMessages((prev) => [{ ...body }, ...prev]);
+
+            if (!conversationIdRef.current && incomingId) {
+              console.log(
+                "🆕 Setting conversationIdRef from first message:",
+                incomingId
+              );
+              conversationIdRef.current = incomingId;
+            }
+          }
+        });
+
+        stompClientRef.current = stompClient;
+      },
+      onStompError: (frame) => {
+        console.error("STOMP error:", frame);
+      },
+    });
+
+    stompClient.activate();
+    return () => {
+      stompClient.deactivate();
+    };
+  }, [conversationId]);
 
   const fetchMessages = async (cursorValue = null) => {
-    if (loading || !hasMoreRef.current) {
-      console.log(
-        "🚫 Skipping fetch — loading:",
-        loading,
-        "hasMore:",
-        hasMoreRef.current
-      );
+    console.log("🟢 fetchMessages", { cursorValue, conversationId });
+
+    if (!conversationId) return;
+    if (loadingRef.current || !hasMoreRef.current) {
+      console.log("⛔ Skipping fetch: loadingRef or hasMoreRef false");
       return;
     }
 
+    loadingRef.current = true;
     setLoading(true);
 
     try {
@@ -51,19 +127,29 @@ export default function ChatDetailScreen() {
         conversationId,
         cursorValue
       );
+      console.log("📦 messages fetched:", data.length);
 
-      if (data.length === 0) {
+      if (cursorValue === null) {
+        seenMessageIds.current = new Set(data.map((msg) => msg.id));
+        setMessages(data);
+      } else {
+        data.forEach((msg) => seenMessageIds.current.add(msg.id));
+        setMessages((prev) => [...prev, ...data]);
+      }
+
+      if (data.length < 20) {
+        console.log("🛑 Fetched less than 20 messages — no more pages");
         setHasMore(false);
         hasMoreRef.current = false;
-      } else {
-        setMessages((prev) => [...prev, ...data]);
-        setCursor(data[data.length - 1].timestamp);
-        setHasMore(true);
-        hasMoreRef.current = true;
+        return;
       }
+
+      const newCursor = data[data.length - 1].timestamp;
+      setCursor(newCursor);
     } catch (err) {
-      console.error("Failed to fetch messages:", err);
+      console.error("❌ Error fetching messages:", err);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
       setInitialLoadDone(true);
     }
@@ -71,14 +157,22 @@ export default function ChatDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      console.log("📌 ChatDetailScreen focused - resetting state");
+
       setMessages([]);
+      seenMessageIds.current.clear();
       setCursor(null);
       setHasMore(true);
       hasMoreRef.current = true;
       setInitialLoadDone(false);
       setLoading(false);
+      loadingRef.current = false;
 
-      fetchMessages(null);
+      const timeout = setTimeout(() => {
+        fetchMessages(null);
+      }, 0);
+
+      return () => clearTimeout(timeout);
     }, [conversationId])
   );
 
@@ -92,31 +186,45 @@ export default function ChatDetailScreen() {
     loadImage();
   }, [opponentProfileImage]);
 
+  const handleDeleteMessage = (messageId) => {
+    stompClientRef.current.publish({
+      destination: "/app/chat.delete",
+      body: JSON.stringify(messageId),
+    });
+  };
+
   const renderMessage = ({ item }) => {
-    const isMine = String(item.senderId) == String(userIdRef.current);
-    console.log(
-      "🧾 DEBUG → senderId:",
-      item.senderId,
-      "userId:",
-      userIdRef.current,
-      "isMine:",
-      isMine
-    );
+    const isMine = String(item.senderId) === String(userIdRef.current);
+
+    const handleLongPress = () => {
+      if (isMine) {
+        Alert.alert("Delete Message", "Do you want to delete this message?", [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => handleDeleteMessage(item.id),
+          },
+        ]);
+      }
+    };
 
     return (
-      <View style={isMine ? styles.messageRowRight : styles.messageRowLeft}>
-        <View
-          style={[
-            styles.messageContainer,
-            isMine ? styles.myMessage : styles.theirMessage,
-          ]}
-        >
-          <Text style={styles.messageText}>{item.content}</Text>
-          <Text style={styles.messageTime}>
-            {new Date(item.timestamp).toLocaleTimeString()}
-          </Text>
+      <TouchableOpacity onLongPress={handleLongPress}>
+        <View style={isMine ? styles.messageRowRight : styles.messageRowLeft}>
+          <View
+            style={[
+              styles.messageContainer,
+              isMine ? styles.myMessage : styles.theirMessage,
+            ]}
+          >
+            <Text style={styles.messageText}>{item.content}</Text>
+            <Text style={styles.messageTime}>
+              {new Date(item.timestamp).toLocaleTimeString()}
+            </Text>
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -157,6 +265,58 @@ export default function ChatDetailScreen() {
           loading ? <ActivityIndicator size="small" color="#fff" /> : null
         }
       />
+
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          padding: 10,
+          backgroundColor: "#1a1a1a",
+        }}
+      >
+        <TextInput
+          style={{
+            flex: 1,
+            height: 40,
+            borderColor: "#444",
+            borderWidth: 1,
+            borderRadius: 8,
+            paddingHorizontal: 10,
+            backgroundColor: "#fff",
+            color: "#000",
+          }}
+          placeholder="Type a message..."
+          placeholderTextColor="#888"
+          value={typedMessage}
+          onChangeText={setTypedMessage}
+        />
+        <TouchableOpacity
+          disabled={typedMessage.trim() === ""}
+          onPress={() => {
+            if (typedMessage.trim() === "") return;
+
+            const messagePayload = {
+              senderId: parseInt(userIdRef.current),
+              receiverId: parseInt(opponentId),
+              conversationId: conversationId ? parseInt(conversationId) : null,
+              content: typedMessage.trim(),
+            };
+
+            stompClientRef.current.publish({
+              destination: "/app/chat.send",
+              body: JSON.stringify(messagePayload),
+            });
+
+            setTypedMessage("");
+          }}
+          style={{
+            marginLeft: 10,
+            opacity: typedMessage.trim() === "" ? 0.3 : 1,
+          }}
+        >
+          <Ionicons name="send" size={24} color="#00acee" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

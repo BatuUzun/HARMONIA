@@ -387,7 +387,8 @@ function ArtistProfile({ route, navigation }) {
             key={star}
             name={star <= rating ? "star" : "star-o"}
             size={14}
-            color="white"
+            color="yellow"
+            style={{ marginHorizontal: 2 }}
           />
         ))}
       </View>
@@ -490,6 +491,7 @@ function ArtistProfile({ route, navigation }) {
     </View>
   );
 
+  // Moved 'Review by' and username to appear before likes
   const renderReviewCard = ({ item }) => {
     const album = albums.find((album) => album.id === item.spotifyId);
     const username = usernames[item.userId] || `User ${item.userId}`;
@@ -510,12 +512,17 @@ function ArtistProfile({ route, navigation }) {
                     key={star}
                     name="star"
                     size={14}
-                    color={star <= item.rating ? "white" : "gray"}
+                    color={star <= item.rating ? "yellow" : "gray"}
                   />
                 ))}
               </View>
-              <Text style={styles.userName}>{username}</Text>
               <Text style={styles.reviewText}>{item.comment}</Text>
+              <Text style={styles.reviewByText}>
+                Review by <Text style={styles.userName}>{username}</Text>
+              </Text>
+              <Text style={styles.reviewByText}>
+                {new Date(item.createdAt).toDateString()}
+              </Text>
               <View style={styles.reviewFooter}>
                 <TouchableOpacity onPress={() => toggleLike(item.id)}>
                   <View style={styles.likeContainer}>
@@ -645,24 +652,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-start",
     marginTop: 10,
-    marginBottom: 0,
+    marginBottom: 10, // Added spacing
   },
   navItem: {
-    paddingVertical: 5,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    marginRight: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 25,
+    backgroundColor: "#333",
+    marginHorizontal: 5, // Added horizontal spacing between items
   },
   selectedNavItem: {
     backgroundColor: "white",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
   },
   navText: {
     color: "gray",
     fontSize: 16,
   },
   selectedNavText: {
-    color: "black",
+    color: "#000",
     fontWeight: "bold",
+    fontSize: 16,
   },
   coverImage: {
     width: "100%",
@@ -680,7 +692,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "white",
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
     marginBottom: 10,
   },
@@ -690,10 +702,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   albumRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-    paddingVertical: 10, // Daha fazla boşluk
+    backgroundColor: "#1a1a1a",
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   albumColumn: {
     flex: 2,
@@ -719,8 +736,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   albumImage: {
-    width: 50,
-    height: 50,
+    width: 55,
+    height: 55,
     borderRadius: 10,
     marginRight: 10,
   },
@@ -730,7 +747,7 @@ const styles = StyleSheet.create({
   },
   albumName: {
     color: "white",
-    fontSize: 12,
+    fontSize: 14,
     maxWidth: 150,
   },
   albumYear: {
@@ -743,10 +760,15 @@ const styles = StyleSheet.create({
   },
   reviewContainer: {
     flexDirection: "row",
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#262626",
     margin: 10,
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   reviewContent: {
     flex: 1,
@@ -778,8 +800,11 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   trackName: {
-    color: "gray",
+    color: "#ccc",
     fontSize: 14,
+    paddingVertical: 3,
+    borderBottomColor: "#333",
+    borderBottomWidth: 1,
   },
   trackList: {
     marginTop: 5,
@@ -813,6 +838,11 @@ const styles = StyleSheet.create({
   addButton: {
     marginTop: 5,
     alignItems: "center",
+  },
+  reviewByText: {
+    fontSize: 12,
+    color: "lightgray",
+    marginTop: 5,
   },
 });
 

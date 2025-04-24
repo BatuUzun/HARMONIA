@@ -39,6 +39,7 @@ import {
   BACKEND_REVIEW_URL,
   BACKEND_USER_FOLLOW_URL,
   BACKEND_FAVORITE_URL,
+  BACKEND_PROFILE_PICTURE_DOWNLOADER_URL,
 } from "../../../constants/apiConstants";
 
 export default function ProfileScreen() {
@@ -717,6 +718,14 @@ export default function ProfileScreen() {
     }
   }, [currentUserId]);
 
+  const openFollowersModal = () => {
+    setNextFollowersCursor(null); // Eski cursor'ı temizle
+    fetchFollowers(); // Yeniden baştan yükle
+    setFollowersModalVisible(true);
+    console.log("Followers API Response:", data);
+    console.log(`Fetching followers with cursor: ${cursor}`);
+  };
+
   const [followers, setFollowers] = useState([]);
   const [following, setFollowing] = useState([]);
 
@@ -725,7 +734,7 @@ export default function ProfileScreen() {
       setIsLoadingFollowers(true);
       let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followers?userId=${currentUserId}`;
       if (cursor) {
-        url += `&cursor=${cursor}`;
+        url += `&cursor=${encodeURIComponent(cursor)}`;
       }
 
       const response = await fetch(url);
@@ -740,6 +749,7 @@ export default function ProfileScreen() {
         setNextFollowersCursor(data.nextCursor);
       } else {
         console.log("❌ Takipçi verisi doğru gelmedi:", data);
+
         setFollowers([]);
       }
     } catch (error) {
@@ -753,13 +763,16 @@ export default function ProfileScreen() {
   const fetchFollowing = async (cursor = null) => {
     try {
       setIsLoadingFollowing(true);
+
       let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followings?userId=${currentUserId}`;
       if (cursor) {
-        url += `&cursor=${cursor}`;
+        url += `&cursor=${encodeURIComponent(cursor)}`; // encode önemli
       }
 
       const response = await fetch(url);
       const data = await response.json();
+
+      console.log("📥 Gelen following data:", data);
 
       if (data && data.items) {
         if (cursor) {
@@ -767,14 +780,13 @@ export default function ProfileScreen() {
         } else {
           setFollowing(data.items);
         }
-        setNextFollowingCursor(data.nextCursor);
+
+        setNextFollowingCursor(data.nextCursor); // Sonuncunun date'ini kullan
       } else {
-        console.log("❌ Takip edilenler verisi doğru gelmedi:", data);
-        setFollowing([]);
+        console.warn("❌ Takip edilen verisi doğru gelmedi:", data);
       }
     } catch (error) {
-      console.error("❌ Takip edilenler alınırken hata oluştu:", error);
-      setFollowing([]);
+      console.error("❌ Takip edilen alınırken hata oluştu:", error);
     } finally {
       setIsLoadingFollowing(false);
     }
@@ -782,6 +794,35 @@ export default function ProfileScreen() {
 
   console.log("followers list:", followers);
   console.log("following list:", following);
+
+  const checkIsFollowing = async () => {
+    if (!loggedInUserId || !currentUserId || loggedInUserId === currentUserId) {
+      setIsFollowing(false); // kendini takip etmiyorsun
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${BACKEND_USER_FOLLOW_URL}/user-follow/is-following`,
+        {
+          params: {
+            followerId: loggedInUserId,
+            followedId: currentUserId,
+          },
+        }
+      );
+      setIsFollowing(response.data === true);
+    } catch (error) {
+      console.error("❌ Takip durumu kontrolü hatası:", error);
+      setIsFollowing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUserId) {
+      checkIsFollowing();
+    }
+  }, [currentUserId, loggedInUserId]);
 
   const handleFollow = async () => {
     try {
@@ -1028,7 +1069,13 @@ export default function ProfileScreen() {
                 profile.profileImage !== "default.png" &&
                 profile.profileImage !== null ? (
                   <Image
-                    source={{ uri: profile.profileImage }}
+                    source={{
+                      uri:
+                        profile.profileImage &&
+                        profile.profileImage !== "default.png"
+                          ? `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${profile.profileImage}`
+                          : Image.resolveAssetSource(defaultProfileImage).uri,
+                    }}
                     style={styles.profileImage}
                     resizeMode="cover"
                   />
@@ -1095,7 +1142,33 @@ export default function ProfileScreen() {
               </Text>
               <Text style={styles.link}>
                 <Ionicons name="link-outline" size={16} color="gray" />{" "}
-                {profile.link}
+                {profile.link ? (
+                  profile.link.startsWith("https://open.spotify.com/user/") ? (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(profile.link)}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginTop: 8,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "white",
+                          marginLeft: 6,
+                          textDecorationLine: "underline",
+                        }}
+                      >
+                        Spotify{" "}
+                      </Text>
+                      <FontAwesome name="spotify" size={20} color="#1DB954" />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ marginTop: 5 }}>
+                      <Text style={{ color: "#ccc" }}>{profile.link}</Text>
+                    </View>
+                  )
+                ) : null}
               </Text>
             </View>
 
@@ -1218,7 +1291,9 @@ export default function ProfileScreen() {
                     <Image
                       source={
                         item.profileImage && item.profileImage !== "default.png"
-                          ? { uri: item.profileImage }
+                          ? {
+                              uri: `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${item.profileImage}`,
+                            }
                           : defaultProfileImage
                       }
                       style={styles.userImageFollow}
@@ -1286,7 +1361,9 @@ export default function ProfileScreen() {
                     <Image
                       source={
                         item.profileImage && item.profileImage !== "default.png"
-                          ? { uri: item.profileImage }
+                          ? {
+                              uri: `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${item.profileImage}`,
+                            }
                           : defaultProfileImage
                       }
                       style={styles.userImageFollow}
@@ -1538,7 +1615,7 @@ const styles = StyleSheet.create({
   bio: { fontSize: 14, color: "white", marginVertical: 5 },
   userInfoContainer: {
     alignItems: "row",
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 25,
   },
   locationLinkContainer: {
@@ -1546,10 +1623,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 5,
   },
-  location: { fontSize: 14, color: "white", marginRight: 15 },
-  link: { fontSize: 14, color: "#1DB954" },
+  location: { fontSize: 14, color: "white", marginRight: 15, marginTop: 5 },
+  link: { fontSize: 14, color: "#1DB954", marginTop: 10 },
 
-  separator: { height: 1, backgroundColor: "#333333", marginVertical: 15 },
+  separator: { height: 2, backgroundColor: "#333333", marginVertical: 15 },
 
   favoriteTitle: {
     fontSize: 18,
@@ -1835,27 +1912,23 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
   },
   modalContainerFollow: {
-    width: "80%",
-    backgroundColor: "#222",
-    padding: 20,
-    borderRadius: 10,
-    alignItems: "center",
+    width: "80%", // Daha geni┼ş
+    maxHeight: "60%", // Ekran─▒n %70'ini kaplas─▒n
+    backgroundColor: "#1E1E1E",
+    borderRadius: 12,
+    padding: 15,
   },
   modalTitleFollow: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "bold",
     color: "white",
-    marginBottom: 10,
+    marginBottom: 15,
+    alignSelf: "center",
   },
   closeButtonFollow: {
     position: "absolute",
     top: 10,
     right: 10,
-  },
-  userItemFollow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 8,
   },
   userImageFollow: {
     width: 40,
@@ -1939,5 +2012,75 @@ const styles = StyleSheet.create({
     alignItems: "center", // Nick ve butonu aynı hizada tutar
     justifyContent: "flex-start", // İkisini yatayda ayırır
     width: "100%",
+  },
+  loadMoreButton: {
+    padding: 10,
+    backgroundColor: "#1DB954",
+    borderRadius: 5,
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  loadMoreText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  noResultsText: {
+    color: "gray",
+    textAlign: "center",
+    marginTop: 20,
+    fontSize: 16,
+  },
+  optionsContainer: {
+    backgroundColor: "#333",
+    position: "absolute",
+    top: 30,
+    right: 0,
+    padding: 10,
+    borderRadius: 5,
+    width: 120,
+    zIndex: 100, // Ensure it's on top of other elements
+  },
+  optionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  optionText: {
+    color: "white",
+    marginLeft: 10,
+    fontSize: 16,
+  },
+  backButton: {
+    position: "absolute",
+    top: 4,
+    left: 15,
+    padding: 10,
+    zIndex: 10,
+  },
+  userItemFollow: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    padding: 10,
+    marginBottom: 5,
+    backgroundColor: "#2a2a2a", // Hafif koyu arkaplan
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  userImageFollow: {
+    width: 30,
+    height: 30,
+    borderRadius: 25, // Tam yuvarlak
+    marginRight: 15,
+  },
+  usernameFollow: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "white",
   },
 });

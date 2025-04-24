@@ -28,6 +28,7 @@ import {
   BACKEND_REVIEW_LIKE_URL,
   BACKEND_USER_FOLLOW_URL,
   IS_DEVELOPMENT,
+  BACKEND_PROFILE_PICTURE_DOWNLOADER_URL,
 } from "../../../constants/apiConstants";
 import { AuthContext } from "../../../context/AuthContext";
 import { getUserProfile } from "../../../api/backend";
@@ -61,7 +62,15 @@ export default function HomeScreen() {
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedAlbumInfo, setSelectedAlbumInfo] = useState(null);
   const [albumDetails, setAlbumDetails] = useState({});
+  const [likeCounts, setLikeCounts] = useState({});
   const router = useRouter();
+
+  const getProfileImageUrl = (fileName) => {
+    if (!fileName || fileName === "default.png") {
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+    return `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${fileName}`;
+  };
 
   const fetchUserProfile = async (userId) => {
     try {
@@ -137,8 +146,6 @@ export default function HomeScreen() {
 
   const fetchInitialData = async () => {
     setLoading(true);
-    setFetchedReviewIds(new Set());
-    setPopularReviews([]);
     setUserProfiles({});
     await fetchPopularReviewIds();
     await fetchFollowedReviews();
@@ -153,12 +160,71 @@ export default function HomeScreen() {
       const reviewIds = await response.json();
       console.log("Popüler Review ID'leri:", reviewIds);
       setPopularReviewIds(reviewIds);
-      await fetchReviewsBatch(reviewIds, 0);
+
+      if (isInitialLoad) {
+        // For initial load, reset the batch index and fetch first batch
+        setCurrentBatchIndex(0);
+        setFetchedReviewIds(new Set());
+        setPopularReviews([]); // Only clear for initial load
+        await fetchReviewsBatch(reviewIds, 0);
+      } else {
+        await refreshExistingReviews(reviewIds);
+      }
     } catch (error) {
       if (IS_DEVELOPMENT) {
         console.error("Error fetching popular review IDs:", error);
       }
     }
+  };
+
+  const refreshExistingReviews = async (reviewIds) => {
+    // Get the IDs of reviews we've already fetched
+    const existingReviewIds = Array.from(fetchedReviewIds);
+
+    // Filter to only include reviews that are still popular
+    const stillPopularIds = existingReviewIds.filter((id) =>
+      reviewIds.includes(id)
+    );
+
+    // Re-fetch these reviews to get any updates
+    const refreshedReviews = await Promise.all(
+      stillPopularIds.map(async (id) => {
+        try {
+          const reviewResponse = await fetch(
+            `${BACKEND_REVIEW_URL}/review/get-review/${id}`
+          );
+          if (!reviewResponse.ok) return null;
+          return await reviewResponse.json();
+        } catch (error) {
+          return null;
+        }
+      })
+    );
+
+    const validRefreshedReviews = refreshedReviews.filter(
+      (review) => review !== null
+    );
+
+    // Update the existing reviews with any changes
+    setPopularReviews((prev) => {
+      const updatedReviews = [...prev];
+      validRefreshedReviews.forEach((updatedReview) => {
+        const index = updatedReviews.findIndex(
+          (r) => r.id === updatedReview.id
+        );
+        if (index >= 0) {
+          updatedReviews[index] = updatedReview;
+        }
+      });
+      return updatedReviews;
+    });
+
+    // Update like counts and statuses for refreshed reviews
+    const counts = await fetchLikeCounts(validRefreshedReviews);
+    setLikeCounts((prev) => ({ ...prev, ...counts }));
+
+    const likedStatuses = await fetchLikedReviews(validRefreshedReviews);
+    setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
   };
 
   const fetchReviewsBatch = async (reviewIds, startIndex) => {
@@ -210,10 +276,54 @@ export default function HomeScreen() {
     const images = await fetchAlbumImages(validReviews);
     setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
 
-    const likeCounts = await fetchLikeCounts(validReviews);
-    setLikedReviews((prevLikes) => ({ ...prevLikes, ...likeCounts }));
+    const counts = await fetchLikeCounts(validReviews);
+    setLikeCounts((prev) => ({ ...prev, ...counts }));
+
+    const likedStatuses = await fetchLikedReviews(validReviews);
+    setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
 
     setCurrentBatchIndex(endIndex);
+  };
+
+  const fetchLikedReviews = async (reviewsData) => {
+    let likedReviewsData = {};
+
+    await Promise.all(
+      reviewsData.map(async (review) => {
+        try {
+          const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${userId}`;
+          const response = await fetch(url);
+
+          if (!response.ok) {
+            console.error(
+              `API Error for review ${review.id}:`,
+              response.status,
+              response.statusText
+            );
+            likedReviewsData[review.id] = null;
+            return;
+          }
+
+          const text = await response.text();
+          if (!text) {
+            console.warn(`Empty response for review ${review.id}`);
+            likedReviewsData[review.id] = null;
+            return;
+          }
+
+          const data = JSON.parse(text);
+          likedReviewsData[review.id] = data.id ? data.id : null;
+        } catch (error) {
+          console.error(
+            `Error fetching liked status for review ${review.id}:`,
+            error
+          );
+          likedReviewsData[review.id] = null;
+        }
+      })
+    );
+
+    return likedReviewsData;
   };
 
   const fetchFollowedReviews = async () => {
@@ -251,8 +361,11 @@ export default function HomeScreen() {
         fetchUserProfile(review.userId);
       });
 
-      const likeCounts = await fetchLikeCounts(allReviews);
-      setLikedReviews((prevLikes) => ({ ...prevLikes, ...likeCounts }));
+      const counts = await fetchLikeCounts(allReviews);
+      setLikeCounts((prev) => ({ ...prev, ...counts }));
+
+      const likedStatuses = await fetchLikedReviews(allReviews);
+      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
 
       const images = await fetchAlbumImages(allReviews);
       setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
@@ -273,8 +386,11 @@ export default function HomeScreen() {
       // Fetch your own profile
       fetchUserProfile(userId);
 
-      const likeCounts = await fetchLikeCounts(data.content || []);
-      setLikedReviews((prevLikes) => ({ ...prevLikes, ...likeCounts }));
+      const counts = await fetchLikeCounts(data.content || []);
+      setLikeCounts((prev) => ({ ...prev, ...counts }));
+
+      const likedStatuses = await fetchLikedReviews(data.content || []);
+      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
 
       const images = await fetchAlbumImages(data.content || []);
       setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
@@ -326,27 +442,25 @@ export default function HomeScreen() {
   };
 
   const fetchLikeCounts = async (reviewsData) => {
-    let likeCounts = {};
+    let likeCountsData = {};
     await Promise.all(
       reviewsData.map(async (review) => {
         try {
-          const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/count`;
-          const response = await fetch(url);
+          const response = await fetch(
+            `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/count`
+          );
           const data = await response.json();
-          likeCounts[review.id] =
-            data.success && typeof data.data === "number" ? data.data : 0;
+          likeCountsData[review.id] = data.success ? data.data : 0;
         } catch (error) {
-          if (IS_DEVELOPMENT) {
-            console.error(
-              `Error fetching like count for review ${review.id}:`,
-              error
-            );
-          }
-          likeCounts[review.id] = 0;
+          console.error(
+            `Error fetching like count for review ${review.id}:`,
+            error
+          );
+          likeCountsData[review.id] = 0;
         }
       })
     );
-    return likeCounts;
+    return likeCountsData;
   };
 
   const fetchAlbumImages = async (reviewsData) => {
@@ -377,32 +491,86 @@ export default function HomeScreen() {
   };
 
   const toggleLike = async (reviewId) => {
-    const isLiked = likedReviews[reviewId] > 0;
-    const url = isLiked
-      ? `${BACKEND_REVIEW_LIKE_URL}/review-like/unlike/${userId}/${reviewId}`
-      : `${BACKEND_REVIEW_LIKE_URL}/review-like/like`;
+    const likeId = likedReviews[reviewId];
+
+    // Optimistically update the UI
+    const wasLiked = !!likeId;
+    const previousLikeCount = likeCounts[reviewId] || 0;
+
+    setLikedReviews((prev) => ({
+      ...prev,
+      [reviewId]: wasLiked ? null : true, // Using true as placeholder until we get the actual like ID
+    }));
+
+    setLikeCounts((prev) => ({
+      ...prev,
+      [reviewId]: wasLiked
+        ? Math.max(previousLikeCount - 1, 0)
+        : previousLikeCount + 1,
+    }));
 
     try {
-      const response = await fetch(url, {
-        method: isLiked ? "DELETE" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: isLiked ? null : JSON.stringify({ userId: userId, reviewId }),
-      });
+      if (wasLiked) {
+        // Unlike operation
+        const response = await fetch(
+          `${BACKEND_REVIEW_LIKE_URL}/review-like/unlike/${likeId}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+          }
+        );
 
-      if (response.ok) {
+        if (!response.ok) {
+          throw new Error("Unlike operation failed");
+        }
+
+        // If successful, we already updated the UI
+      } else {
+        // Like operation
+        const response = await fetch(
+          `${BACKEND_REVIEW_LIKE_URL}/review-like/like`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, reviewId }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error("Like operation failed");
+        }
+
+        // Update with the actual like ID from the server
         setLikedReviews((prev) => ({
           ...prev,
-          [reviewId]: isLiked
-            ? (prev[reviewId] || 1) - 1
-            : (prev[reviewId] || 0) + 1,
+          [reviewId]: data.data, // This should be the like ID from the server
         }));
       }
     } catch (error) {
-      if (IS_DEVELOPMENT) {
-        console.error("Error toggling like:", error);
-      }
+      console.error("Like/Unlike operation failed:", error);
+
+      // Revert the optimistic update if the API call failed
+      setLikedReviews((prev) => ({
+        ...prev,
+        [reviewId]: wasLiked ? likeId : null,
+      }));
+
+      setLikeCounts((prev) => ({
+        ...prev,
+        [reviewId]: previousLikeCount,
+      }));
+
+      Alert.alert("Error", "Could not update like status. Please try again.");
     }
   };
+
+  useEffect(() => {
+    if (refreshing) {
+      fetchInitialData().then(() => setRefreshing(false));
+    }
+  }, [refreshing]);
 
   const handleDeleteReview = async (reviewId) => {
     try {
@@ -430,8 +598,13 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchInitialData();
-    setRefreshing(false);
+    try {
+      await fetchPopularReviewIds();
+      await fetchFollowedReviews();
+      await fetchYourReviews();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const onEndReached = async () => {
@@ -515,178 +688,160 @@ export default function HomeScreen() {
     userId,
   }) => {
     const [menuVisible, setMenuVisible] = useState(false);
-
     const isOwner = Number(review.userId) === Number(userId);
+    const router = useRouter();
+
     useEffect(() => {
       if (!userProfiles[review.userId]) {
         fetchUserProfile(review.userId);
       }
     }, [review.userId]);
 
-    return (
-      <View
-        style={{
-          flexDirection: "column",
-          backgroundColor: "#1E1E1E",
-          margin: 10,
-          marginRight: 10,
-          borderRadius: 10,
-          padding: 10,
-        }}
-      >
-        {/* PROFİL FOTOĞRAF + KULLANICI ADI */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <TouchableOpacity
-              onPress={() =>
-                router.push("/Screens/Profile/Profile", {
-                  userId: review.userId,
-                })
-              }
-            >
-              <Image
-                source={
-                  userProfiles[review.userId]?.profileImage
-                    ? { uri: userProfiles[review.userId].profileImage }
-                    : defaultProfileImage
-                }
-                style={styles.profilePhoto}
-              />
-            </TouchableOpacity>
-            <View>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={styles.ReviewBy}>Review by </Text>
+    const handlePress = () => {
+      const details = albumDetails[review.spotifyId];
+      const album = {
+        id: review.spotifyId,
+        name: details?.albumName || review.albumName || "Unknown Album",
+        images: [{ url: albumImages[review.spotifyId] || "" }],
+        release_date:
+          review.releaseDate || `${details?.releaseYear || 2023}-01-01`,
+        artists: [
+          {
+            name: details?.artistName || review.artistName || "Unknown Artist",
+          },
+        ],
+      };
 
-                <TouchableOpacity
-                  onPress={() =>
-                    router.push("/Screens/Profile/Profile", {
-                      userId: review.userId,
-                    })
+      router.push({
+        pathname: "/Screens/ReviewDetail/",
+        params: {
+          review: JSON.stringify({
+            ...review,
+            createdAt: review.createdAt, // Ensure date is included
+            rating: review.rating, // Ensure rating is included
+            comment: review.comment, // Ensure comment is included
+            userId: review.userId, // Ensure user ID is included
+          }),
+          album: JSON.stringify(album),
+          userProfile: JSON.stringify(
+            userProfiles[review.userId] || {
+              username: "Unknown User",
+              profileImage: null,
+            }
+          ),
+          likeCount: likeCounts[review.id] || 0,
+          isLiked: !!likedReviews[review.id],
+          currentUserId: userId,
+        },
+      });
+    };
+
+    return (
+      <View style={styles.cardContainer}>
+        {/* Make the main content area clickable */}
+        <TouchableWithoutFeedback onPress={handlePress}>
+          <View>
+            {/* Profile section */}
+            <View style={styles.profileSection}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Image
+                  source={{
+                    uri: getProfileImageUrl(
+                      userProfiles[review.userId]?.profileImage
+                    ),
+                  }}
+                  style={styles.profilePhoto}
+                />
+                <View>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Text style={styles.ReviewBy}>Review by </Text>
+                    <Text style={styles.userName}>
+                      {userProfiles[review.userId]?.username ||
+                        `User ${review.userId}`}
+                    </Text>
+                  </View>
+                  <Text style={styles.reviewDate}>
+                    {new Date(review.createdAt).toDateString()}
+                  </Text>
+                </View>
+              </View>
+
+              {isOwner && (
+                <Menu
+                  visible={menuVisible}
+                  onDismiss={() => setMenuVisible(false)}
+                  anchor={
+                    <TouchableOpacity onPress={() => setMenuVisible(true)}>
+                      <Ionicons
+                        name="ellipsis-horizontal"
+                        size={24}
+                        color="white"
+                        style={{ marginTop: -20 }}
+                      />
+                    </TouchableOpacity>
                   }
                 >
-                  <Text style={styles.userName}>
-                    {userProfiles[review.userId]?.username}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.reviewDate}>
-                {new Date(review.createdAt).toDateString()}
-              </Text>
-            </View>
-          </View>
-
-          {isOwner && (
-            <Menu
-              visible={menuVisible}
-              onDismiss={() => setMenuVisible(false)}
-              anchor={
-                <TouchableOpacity onPress={() => setMenuVisible(true)}>
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={24}
-                    color="white"
-                    style={{ marginTop: -20 }}
+                  <Menu.Item
+                    onPress={() => {
+                      setSelectedReviewId(review.id);
+                      setModalVisible(true);
+                      setMenuVisible(false);
+                    }}
+                    title="Delete"
+                    leadingIcon="delete"
                   />
-                </TouchableOpacity>
-              }
-            >
-              <Menu.Item
-                onPress={() => {
-                  setSelectedReviewId(review.id);
-                  setModalVisible(true);
-                  setMenuVisible(false);
-                }}
-                title="Delete"
-                leadingIcon="delete"
-              />
-              <Menu.Item
-                onPress={() => {
-                  setMenuVisible(false);
+                  <Menu.Item
+                    onPress={() => {
+                      setMenuVisible(false);
+                      const details = albumDetails[review.spotifyId];
+                      const album = {
+                        id: review.spotifyId,
+                        name: details?.albumName || "Unknown Album",
+                        images: [{ url: albumImages[review.spotifyId] || "" }],
+                        release_date:
+                          review.releaseDate ||
+                          `${details?.releaseYear || 2023}-01-01`,
+                        artists: [
+                          {
+                            name: details?.artistName || "Unknown Artist",
+                          },
+                        ],
+                      };
 
-                  const details = albumDetails[review.spotifyId];
-                  const album = {
-                    id: review.spotifyId,
-                    name: details?.albumName || "Unknown Album",
-                    images: [{ url: albumImages[review.spotifyId] || "" }],
-                    release_date:
-                      review.releaseDate ||
-                      `${details?.releaseYear || 2023}-01-01`,
-                    artists: [
-                      {
-                        name: details?.artistName || "Unknown Artist",
-                      },
-                    ],
-                  };
+                      router.push({
+                        pathname: "Screens/Review/Entry",
+                        params: {
+                          selectedAlbum: JSON.stringify(album),
+                          reviewToUpdate: JSON.stringify(review),
+                          isUpdateFlow: true,
+                        },
+                      });
+                    }}
+                    title="Update"
+                    leadingIcon="pencil"
+                  />
+                </Menu>
+              )}
+            </View>
 
-                  router.push({
-                    pathname: "Screens/Review/Entry",
-                    params: {
-                      selectedAlbum: JSON.stringify(album),
-                      reviewToUpdate: JSON.stringify(review),
-                      isUpdateFlow: true,
-                    },
-                  });
-                }}
-                title="Update"
-                leadingIcon="pencil"
-              />
-            </Menu>
-          )}
-        </View>
+            <View style={styles.divider} />
 
-        <View
-          style={{
-            borderBottomColor: "#333",
-            borderBottomWidth: 1,
-            marginVertical: 6,
-            marginBottom: 10,
-          }}
-        />
-
-        {/* ALBÜM + YORUM */}
-        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-          <TouchableOpacity
-            onPress={() => {
-              console.log("🟢 Albüm cover tıklandı!");
-              setSelectedAlbumInfo({
-                image: albumImage,
-                albumName: review.albumName,
-                artistName: review.artistName,
-                year: new Date(review.releaseDate).getFullYear(),
-                spotifyId: review.spotifyId,
-              });
-              setImageModalVisible(true);
-            }}
-          >
-            {albumImage ? (
+            {/* Album + Review section */}
+            <View style={styles.reviewMainContent}>
               <Image source={{ uri: albumImage }} style={styles.albumCover} />
-            ) : (
-              <View style={[styles.albumCover, styles.placeholder]}>
-                <Ionicons name="image-outline" size={40} color="gray" />
+              <View style={styles.reviewTextContainer}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.reviewText}>{review.comment}</Text>
+                </ScrollView>
               </View>
-            )}
-          </TouchableOpacity>
-
-          <View style={[styles.reviewContent, { paddingTop: 0 }]}>
-            <View style={styles.commentScrollWrapper}>
-              <ScrollView
-                nestedScrollEnabled={true}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={true}
-              >
-                <Text style={styles.reviewText}>{review.comment}</Text>
-              </ScrollView>
             </View>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
 
-        {/* EN ALTA SABİTLENEN KISIM */}
+        {/* Footer with rating and like button */}
         <View style={styles.reviewFooter}>
           <View style={styles.rating}>
             {[...Array(5)].map((_, i) => (
@@ -698,16 +853,18 @@ export default function HomeScreen() {
               />
             ))}
           </View>
-          <TouchableOpacity onPress={() => toggleLike(review.id)}>
+          <TouchableOpacity
+            onPress={() => toggleLike(review.id)}
+            style={styles.likeButton}
+          >
             <View style={styles.likeContainer}>
               <Ionicons
                 name={likedReviews[review.id] ? "heart" : "heart-outline"}
                 size={20}
                 color={likedReviews[review.id] ? "red" : "white"}
               />
-
               <Text style={styles.likeText}>
-                {likedReviews[review.id] || 0} Likes
+                {likeCounts[review.id] || 0} Likes
               </Text>
             </View>
           </TouchableOpacity>
@@ -768,7 +925,6 @@ export default function HomeScreen() {
           if (selectedTab === "Popular") {
             return (
               <EmptyState message="Looks like there are no popular reviews yet." />
-              // TODO: Kullanıcıyı bilgilendiren bir yazı (popüler reviewlar ... dan sonra buraya düşer gibi)
             );
           } else if (selectedTab === "Following") {
             return (
@@ -1024,7 +1180,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   commentScrollWrapper: {
-    maxHeight: 100, // ya da 80, 100 vs. - dene görsel olarak
+    maxHeight: 100,
     overflow: "hidden",
   },
   imageModalBackground: {
@@ -1057,12 +1213,12 @@ const styles = StyleSheet.create({
   spotifyButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center", // YATAY ORTALA
+    justifyContent: "center",
     backgroundColor: "#1DB954",
     padding: 10,
     borderRadius: 5,
     marginTop: 20,
-    width: 200, // sabit genişlik vererek ortalanmayı netleştir
+    width: 200,
   },
   spotifyButtonText: {
     color: "white",
@@ -1070,7 +1226,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   imageModalContent: {
-    alignItems: "center", // Butonu ve textleri ortalar
+    alignItems: "center",
   },
   emptyStateContainer: {
     flex: 1,
@@ -1100,5 +1256,86 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  cardContainer: {
+    flexDirection: "column",
+    backgroundColor: "#1E1E1E",
+    margin: 10,
+    borderRadius: 10,
+    padding: 10,
+  },
+  profileSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 5,
+  },
+  divider: {
+    borderBottomColor: "#333",
+    borderBottomWidth: 1,
+    marginVertical: 6,
+    marginBottom: 10,
+  },
+  reviewMainContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  reviewTextContainer: {
+    flex: 1,
+    marginLeft: 10,
+    maxHeight: 100,
+  },
+  likeButton: {
+    padding: 5,
+    marginLeft: 10,
+  },
+  profilePhoto: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginRight: 8,
+  },
+  ReviewBy: {
+    color: "lightgrey",
+    fontSize: 12,
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "white",
+    marginBottom: 3,
+  },
+  reviewDate: {
+    fontSize: 10,
+    color: "gray",
+  },
+  albumCover: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  reviewText: {
+    fontSize: 14,
+    color: "lightgray",
+    lineHeight: 20,
+  },
+  reviewFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingHorizontal: 5,
+  },
+  rating: {
+    flexDirection: "row",
+  },
+  likeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  likeText: {
+    color: "white",
+    marginLeft: 5,
+    fontSize: 14,
   },
 });

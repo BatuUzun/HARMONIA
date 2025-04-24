@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,10 @@ import {
   getProfileImageBase64,
   getConversationSummaries,
 } from "../../api/backend";
-import styles from "./indexcss"; // external CSS-in-JS
+import styles from "./indexcss";
+import { Client } from "@stomp/stompjs"; // ✅ WebSocket Client
+import SockJS from "sockjs-client"; // ✅ SockJS for fallback support
+import { socketUrl } from "../../constants/apiConstants"; // ✅ Socket URL
 
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams();
@@ -24,6 +27,48 @@ export default function ChatScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [profileImages, setProfileImages] = useState({});
   const router = useRouter();
+  const stompClientRef = useRef(null);
+  const userIdRef = useRef(null);
+
+  // ✅ Connect to WebSocket and listen for new messages
+  useEffect(() => {
+    if (!userId) return;
+
+    const socket = new SockJS(`${socketUrl}?userId=${userId}`);
+    const stompClient = new Client({
+      webSocketFactory: () => socket,
+      reconnectDelay: 5000,
+      onConnect: () => {
+        console.log("✅ Connected to WebSocket");
+
+        const destination = `/user/${userId}/queue/messages`;
+        console.log("🔔 Subscribing to:", destination);
+
+        stompClient.subscribe(destination, (message) => {
+          console.log("📨 Real-time message on ChatScreen:", message);
+
+          try {
+            const body = JSON.parse(message.body);
+            console.log("📩 Parsed body:", body);
+            fetchSummaries(); // ✅ Refresh summaries
+          } catch (e) {
+            console.error("❌ Failed to parse message:", e);
+          }
+        });
+
+        stompClientRef.current = stompClient;
+      },
+      onStompError: (frame) => {
+        console.error("STOMP error:", frame);
+      },
+    });
+
+    stompClient.activate();
+
+    return () => {
+      stompClient.deactivate();
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (username.trim() !== "") return;
@@ -43,10 +88,63 @@ export default function ChatScreen() {
 
     refreshImages();
   }, [username]);
+  useEffect(() => {
+    if (userId) {
+      userIdRef.current = userId;
+    }
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchSummaries();
+      console.log("🧩 ChatScreen Focused — userId:", userIdRef.current);
+      setUsername("");
+      setSearchResults([]);
+      let stompClient;
+
+      const connectWebSocket = () => {
+        const socket = new SockJS(`${socketUrl}?userId=${userIdRef.current}`);
+        stompClient = new Client({
+          webSocketFactory: () => socket,
+          reconnectDelay: 5000,
+          onConnect: () => {
+            console.log("✅ WebSocket connected");
+
+            const destination = `/user/${userIdRef.current}/queue/messages`;
+            console.log("🔔 Subscribing to:", destination);
+
+            stompClient.subscribe(destination, (message) => {
+              console.log("📨 Real-time message received:", message);
+
+              try {
+                const body = JSON.parse(message.body);
+                console.log("📩 Parsed message body:", body);
+                fetchSummaries();
+              } catch (e) {
+                console.error("❌ Failed to parse WebSocket message:", e);
+              }
+            });
+
+            stompClientRef.current = stompClient;
+          },
+          onStompError: (frame) => {
+            console.error("❌ STOMP error:", frame);
+          },
+        });
+
+        stompClient.activate();
+      };
+
+      if (userIdRef.current) {
+        fetchSummaries();
+        connectWebSocket();
+      }
+
+      return () => {
+        if (stompClientRef.current?.connected) {
+          console.log("🔌 Disconnecting WebSocket...");
+          stompClientRef.current.deactivate();
+        }
+      };
     }, [])
   );
 
@@ -91,7 +189,13 @@ export default function ChatScreen() {
     setLoading(true);
     try {
       const results = await searchPeople(username);
-      const filtered = results.filter((item) => item.id != userId);
+
+      const chattedUserIds = new Set(
+        conversationSummaries.map((cs) => cs.opponentId)
+      );
+      const filtered = results.filter(
+        (item) => item.id != userId && !chattedUserIds.has(item.id)
+      );
       setSearchResults(filtered);
 
       const imageMap = {};
@@ -112,7 +216,6 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Go Back Button */}
       <TouchableOpacity
         onPress={() => router.back()}
         style={{ marginBottom: 10 }}
@@ -125,7 +228,7 @@ export default function ChatScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Search by username"
+        placeholder="Create chat with someone..."
         placeholderTextColor="#999"
         value={username}
         onChangeText={setUsername}
@@ -146,8 +249,10 @@ export default function ChatScreen() {
                   params: {
                     conversationId: item.conversationId,
                     userId: userId,
+                    opponentId: item.opponentId,
                     opponentUsername: item.opponentUsername,
                     opponentProfileImage: item.opponentProfileImage,
+                    key: `${item.conversationId}-${Date.now()}`,
                   },
                 })
               }
@@ -162,9 +267,11 @@ export default function ChatScreen() {
                 <View>
                   <Text style={styles.resultText}>{item.opponentUsername}</Text>
                   <Text style={styles.messageText}>{item.lastMessage}</Text>
-                  <Text style={styles.timestampText}>
-                    {new Date(item.timestamp).toLocaleString()}
-                  </Text>
+                  {item.lastMessage && item.timestamp && (
+                    <Text style={styles.timestampText}>
+                      {new Date(item.timestamp).toLocaleString()}
+                    </Text>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -175,7 +282,22 @@ export default function ChatScreen() {
           data={searchResults}
           keyExtractor={(item, index) => (item?.id || index).toString()}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.resultItem}>
+            <TouchableOpacity
+              style={styles.resultItem}
+              onPress={() =>
+                router.push({
+                  pathname: "/Screens/Chat/ChatDetailScreen",
+                  params: {
+                    conversationId: "", // pass empty string or don't include it
+                    userId: userIdRef.current || userId,
+                    opponentId: item.id,
+                    opponentUsername: item.username,
+                    opponentProfileImage: item.profileImage,
+                    key: `${item.conversationId}-${Date.now()}`,
+                  },
+                })
+              }
+            >
               <View style={styles.resultRow}>
                 {profileImages[item.id] && (
                   <Image

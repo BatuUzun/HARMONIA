@@ -103,6 +103,9 @@ function Layout() {
             case "Screens/Review/Entry/index":
               iconName = "add-circle-outline";
               break;
+            case "Screens/ActivityNotification/index":
+              iconName = "notifications-outline";
+              break;
             case "Screens/Profile/Profile/index":
               iconName = "person-outline";
               break;
@@ -158,6 +161,15 @@ function Layout() {
         options={{ title: "Review" }}
       />
       <Tabs.Screen
+        name="Screens/ActivityNotification/index"
+        options={{
+          title: "Activity",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="notifications-outline" size={28} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="Screens/Profile/Profile/index"
         options={{ title: "Profile" }}
       />
@@ -188,13 +200,17 @@ function Layout() {
       />
       <Tabs.Screen
         name="Screens/Chat/ChatDetailScreen"
-        options={{ href: null }}
+        options={{ href: null, title: "HARMONIA" }}
       />
       <Tabs.Screen
         name="Screens/Chat/ChatDetailScreenStyles"
         options={{ href: null }}
       />
       <Tabs.Screen name="Screens/Chat/indexcss" options={{ href: null }} />
+      <Tabs.Screen
+        name="Screens/ReviewDetail/index"
+        options={{ href: null, title: "HARMONIA" }}
+      />
     </Tabs>
   );
 }
