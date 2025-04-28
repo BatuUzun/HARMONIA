@@ -16,7 +16,9 @@ import {
 import styles from "./indexcss";
 import { Client } from "@stomp/stompjs"; // ✅ WebSocket Client
 import SockJS from "sockjs-client"; // ✅ SockJS for fallback support
-import { socketUrl } from "../../constants/apiConstants"; // ✅ Socket URL
+import {
+  socketUrl,
+} from "../../constants/apiConstants";
 
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams();

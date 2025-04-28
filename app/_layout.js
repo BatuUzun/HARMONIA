@@ -211,6 +211,7 @@ function Layout() {
         name="Screens/ReviewDetail/index"
         options={{ href: null, title: "HARMONIA" }}
       />
+      <Tabs.Screen name="Screens/ActivityNotification/indexcss" options={{ href: null }} />
     </Tabs>
   );
 }

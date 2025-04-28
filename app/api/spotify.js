@@ -173,6 +173,17 @@ export const getAlbumTracks = async (albumId) => {
   return data.items;
 };
 
+const searchTracks = async (accessToken, query, offset = 0) => {
+  const url = `https://api.spotify.com/v1/search?q=${query}&type=track&limit=10&offset=${offset}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await response.json();
+  return data.tracks.items;
+};
+
 export {
   getAccessToken,
   searchArtists,
@@ -180,4 +191,5 @@ export {
   getTop50GlobalPlaylist,
   getArtistDetails,
   getTopArtistsByPopularity,
+  searchTracks,
 };

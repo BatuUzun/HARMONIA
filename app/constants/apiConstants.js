@@ -1,11 +1,11 @@
 // Buradaki bilgiler demo süreci için. Üretim ortamında backend'e aktarılmalıdır.
-const IP_ADDRESS = "http://192.168.0.27"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
+const IP_ADDRESS = "http://localhost"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
 
 //HARMONIA APP
 
 //DEMO APP
 
-export const REDIRECT_URI = "exp://172.20.10.2:8081"; // Geliştirme sırasında kullanılması gereken URI, üretimde değiştirilmelidir
+export const REDIRECT_URI = `exp://${IP_ADDRESS}:8081`; // Geliştirme sırasında kullanılması gereken URI, üretimde değiştirilmelidir
 
 export const AUTH_URL = "https://accounts.spotify.com/authorize";
 export const TOKEN_URL = "https://accounts.spotify.com/api/token";

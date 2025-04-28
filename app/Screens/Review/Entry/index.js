@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useContext } from "react";
-import { useRoute } from "@react-navigation/native"; // Import useRoute
+import React, { useState, useEffect, useContext, useCallback } from "react";
+import { useRoute, useFocusEffect } from "@react-navigation/native"; // Import useRoute
 import { RefreshControl } from "react-native";
 import {
   View,
@@ -79,22 +79,27 @@ export default function ReviewScreen() {
 
     if (isUpdateFlow === false) {
       resetForm();
-    }    
+    }
 
-    if (selectedAlbumRaw && !isUpdateFlow) {
-      // Fresh review flow
+    // Always parse and set the selectedAlbum if provided
+    if (selectedAlbumRaw) {
       try {
         const parsedAlbum = JSON.parse(selectedAlbumRaw);
         setSelectedAlbum(parsedAlbum);
-        setRating(0);
-        setReviewText("");
-        setDate(new Date());
-        setReviewToUpdate(null);
+
+        // Only reset form fields if it's not an update flow
+        if (!isUpdateFlow) {
+          setRating(0);
+          setReviewText("");
+          setDate(new Date());
+          setReviewToUpdate(null);
+        }
       } catch (e) {
         if (IS_DEVELOPMENT) console.error("Failed to parse selectedAlbum:", e);
       }
-    } else if (reviewToUpdateRaw) {
-      // Update flow
+    }
+
+    if (reviewToUpdateRaw) {
       try {
         const parsedReview = JSON.parse(reviewToUpdateRaw);
         setReviewToUpdate(parsedReview);
@@ -102,16 +107,25 @@ export default function ReviewScreen() {
         setReviewText(parsedReview.comment || "");
         setDate(new Date(parsedReview.createdAt));
 
-        // Ensure we have the album data for the review being updated
-        if (selectedAlbumRaw) {
-          const parsedAlbum = JSON.parse(selectedAlbumRaw);
-          setSelectedAlbum(parsedAlbum);
+        // Only fetch from Spotify if we don't have selectedAlbum yet
+        if (!selectedAlbumRaw) {
+          fetchAlbumInfoFromSpotify(parsedReview.spotifyId);
         }
       } catch (e) {
         if (IS_DEVELOPMENT) console.error("Failed to parse reviewToUpdate:", e);
       }
     }
   }, [route.params]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Ekran açıldığında hiçbir şey yapma
+      return () => {
+        // Ekran kapandığında resetForm yap
+        resetForm();
+      };
+    }, [])
+  );
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -181,6 +195,7 @@ export default function ReviewScreen() {
   };
 
   const openDatePicker = () => {
+    if (reviewToUpdate) return;
     setShowDatePicker((prev) => !prev); // Toggle picker visibility
     if (!date) {
       setDate(new Date());
@@ -462,6 +477,34 @@ export default function ReviewScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const fetchAlbumInfoFromSpotify = async (spotifyId) => {
+    if (!spotifyId || !accessToken) return;
+
+    try {
+      const response = await fetch(
+        `https://api.spotify.com/v1/albums/${spotifyId}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      const data = await response.json();
+
+      if (data) {
+        setSelectedAlbum({
+          id: data.id,
+          name: data.name,
+          release_date: data.release_date,
+          images: data.images,
+          artists: data.artists,
+        });
+      }
+    } catch (error) {
+      if (IS_DEVELOPMENT) {
+        console.error("Failed to fetch album info from Spotify:", error);
+      }
+    }
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -506,7 +549,11 @@ export default function ReviewScreen() {
       </TouchableOpacity>
 
       {/* Date Picker */}
-      <TouchableOpacity onPress={openDatePicker} style={styles.dateButton}>
+      <TouchableOpacity
+        onPress={openDatePicker}
+        style={styles.dateButton}
+        disabled={!!reviewToUpdate}
+      >
         <View style={styles.dateTextContainer}>
           <Text style={styles.dateText}>
             {date
@@ -555,27 +602,36 @@ export default function ReviewScreen() {
           <View style={styles.starRow}>{renderStars()}</View>
         </View>
       </View>
+      <View style={{ position: "relative", marginBottom: 15 }}>
+        {/* Review Input */}
+        <TextInput
+          style={styles.textInput}
+          placeholder={
+            "Add review for " +
+            (selectedAlbum ? selectedAlbum.name : "") +
+            "..."
+          }
+          placeholderTextColor="gray"
+          multiline
+          value={reviewText}
+          onChangeText={(text) => {
+            if (text.length <= 1000) {
+              setReviewText(text);
+            }
+          }}
+          maxLength={1000}
+        />
+        <Text style={styles.characterCount}>{reviewText.length}/1000</Text>
+      </View>
 
-      {/* Review Input */}
-      <TextInput
-        style={styles.textInput}
-        placeholder={
-          "Add review for " + (selectedAlbum ? selectedAlbum.name : "") + "..."
-        }
-        placeholderTextColor="gray"
-        multiline
-        value={reviewText}
-        onChangeText={setReviewText}
-      />
-
-      {/* Save/Update Buttons */}
+      {/* Submit/Update Buttons */}
       {reviewToUpdate ? (
         <TouchableOpacity style={styles.updateButton} onPress={updateReview}>
           <Text style={styles.buttonText}>Update</Text>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity style={styles.saveButton} onPress={saveReview}>
-          <Text style={styles.buttonText}>Save</Text>
+          <Text style={styles.buttonText}>Submit</Text>
         </TouchableOpacity>
       )}
 
@@ -907,5 +963,12 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "white",
     fontWeight: "bold",
+  },
+  characterCount: {
+    position: "absolute",
+    top: -20,
+    right: 5,
+    color: "gray",
+    fontSize: 12,
   },
 });

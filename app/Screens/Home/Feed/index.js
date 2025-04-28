@@ -17,7 +17,8 @@ import {
   Modal,
   Alert,
   RefreshControl,
-  ScrollView,
+  Animated,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -59,11 +60,11 @@ export default function HomeScreen() {
   const [followedReviews, setFollowedReviews] = useState([]);
   const [yourReviews, setYourReviews] = useState([]);
   const [fetchedReviewIds, setFetchedReviewIds] = useState(new Set());
-  const [imageModalVisible, setImageModalVisible] = useState(false);
-  const [selectedAlbumInfo, setSelectedAlbumInfo] = useState(null);
   const [albumDetails, setAlbumDetails] = useState({});
   const [likeCounts, setLikeCounts] = useState({});
   const router = useRouter();
+  const screenHeight = Dimensions.get("window").height;
+  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
 
   const getProfileImageUrl = (fileName) => {
     if (!fileName || fileName === "default.png") {
@@ -584,7 +585,11 @@ export default function HomeScreen() {
         setYourReviews((prevReviews) =>
           prevReviews.filter((review) => review.id !== reviewId)
         );
-        setModalVisible(false);
+        Animated.timing(slideAnim, {
+          toValue: screenHeight,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setModalVisible(false));
       } else {
         Alert.alert("Error", "Failed to delete review");
       }
@@ -629,53 +634,22 @@ export default function HomeScreen() {
     }
   };
 
-  const AlbumImageModal = () => {
-    const details = albumDetails[selectedAlbumInfo?.spotifyId];
+  const openDeleteModal = () => {
+    setModalVisible(true);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      friction: 5,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
+  };
 
-    return (
-      <Modal
-        visible={imageModalVisible}
-        animationType="fade"
-        transparent={true}
-        onDismiss={() => setSelectedAlbumInfo(null)}
-      >
-        <TouchableWithoutFeedback
-          onPress={() => {
-            setImageModalVisible(false);
-          }}
-        >
-          <View style={styles.imageModalBackground}>
-            <TouchableWithoutFeedback>
-              <View style={styles.imageModalContent}>
-                <Image
-                  source={{ uri: selectedAlbumInfo?.image }}
-                  style={styles.imageModalImage}
-                />
-                <Text style={styles.imageModalText}>
-                  {details?.albumName || "Album"}
-                </Text>
-                <Text style={styles.imageModalTextSmall}>
-                  {details?.artistName || "Artist"} •{" "}
-                  {details?.releaseYear || "Year"}
-                </Text>
-
-                <TouchableOpacity
-                  style={styles.spotifyButton}
-                  onPress={() =>
-                    Linking.openURL(
-                      `https://open.spotify.com/album/${selectedAlbumInfo?.spotifyId}`
-                    )
-                  }
-                >
-                  <FontAwesome name="spotify" size={24} color="white" />
-                  <Text style={styles.spotifyButtonText}>Open in Spotify</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-    );
+  const closeDeleteModal = () => {
+    Animated.timing(slideAnim, {
+      toValue: screenHeight,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => setModalVisible(false));
   };
 
   const ReviewCard = ({
@@ -698,40 +672,20 @@ export default function HomeScreen() {
     }, [review.userId]);
 
     const handlePress = () => {
-      const details = albumDetails[review.spotifyId];
-      const album = {
-        id: review.spotifyId,
-        name: details?.albumName || review.albumName || "Unknown Album",
-        images: [{ url: albumImages[review.spotifyId] || "" }],
-        release_date:
-          review.releaseDate || `${details?.releaseYear || 2023}-01-01`,
-        artists: [
-          {
-            name: details?.artistName || review.artistName || "Unknown Artist",
-          },
-        ],
-      };
-
       router.push({
         pathname: "/Screens/ReviewDetail/",
         params: {
-          review: JSON.stringify({
-            ...review,
-            createdAt: review.createdAt, // Ensure date is included
-            rating: review.rating, // Ensure rating is included
-            comment: review.comment, // Ensure comment is included
-            userId: review.userId, // Ensure user ID is included
-          }),
-          album: JSON.stringify(album),
-          userProfile: JSON.stringify(
-            userProfiles[review.userId] || {
-              username: "Unknown User",
-              profileImage: null,
-            }
-          ),
+          id: review.id,
+          username: userProfiles[review.userId]?.username || "Unknown User",
+          profileImage: userProfiles[review.userId]?.profileImage || null,
+          createdAt: review.createdAt,
+          comment: review.comment,
+          rating: review.rating,
           likeCount: likeCounts[review.id] || 0,
-          isLiked: !!likedReviews[review.id],
-          currentUserId: userId,
+          spotifyId: review.spotifyId,
+          isLiked: Boolean(likedReviews[review.id]),
+          likeId: likedReviews[review.id] || null,
+          reviewUserId: review.userId,
         },
       });
     };
@@ -744,21 +698,40 @@ export default function HomeScreen() {
             {/* Profile section */}
             <View style={styles.profileSection}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Image
-                  source={{
-                    uri: getProfileImageUrl(
-                      userProfiles[review.userId]?.profileImage
-                    ),
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push({
+                      pathname: "/Screens/Profile/Profile/",
+                      params: { userId: review.userId },
+                    });
                   }}
-                  style={styles.profilePhoto}
-                />
+                >
+                  <Image
+                    source={{
+                      uri: getProfileImageUrl(
+                        userProfiles[review.userId]?.profileImage
+                      ),
+                    }}
+                    style={styles.profilePhoto}
+                  />
+                </TouchableOpacity>
+
                 <View>
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
                     <Text style={styles.ReviewBy}>Review by </Text>
-                    <Text style={styles.userName}>
-                      {userProfiles[review.userId]?.username ||
-                        `User ${review.userId}`}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        router.push({
+                          pathname: "/Screens/Profile/Profile/",
+                          params: { userId: review.userId },
+                        });
+                      }}
+                    >
+                      <Text style={styles.userName}>
+                        {userProfiles[review.userId]?.username ||
+                          `User ${review.userId}`}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                   <Text style={styles.reviewDate}>
                     {new Date(review.createdAt).toDateString()}
@@ -784,23 +757,53 @@ export default function HomeScreen() {
                   <Menu.Item
                     onPress={() => {
                       setSelectedReviewId(review.id);
-                      setModalVisible(true);
+                      openDeleteModal();
                       setMenuVisible(false);
                     }}
                     title="Delete"
                     leadingIcon="delete"
                   />
+
                   <Menu.Item
-                    onPress={() => {
+                    onPress={async () => {
                       setMenuVisible(false);
-                      const details = albumDetails[review.spotifyId];
+
+                      let details = albumDetails[review.spotifyId];
+
+                      if (!details) {
+                        try {
+                          const response = await fetch(
+                            `https://api.spotify.com/v1/albums/${review.spotifyId}`,
+                            {
+                              headers: {
+                                Authorization: `Bearer ${accessToken}`,
+                              },
+                            }
+                          );
+                          const data = await response.json();
+                          details = {
+                            albumName: data.name,
+                            artistName:
+                              data.artists?.[0]?.name || "Unknown Artist",
+                            releaseYear: new Date(
+                              data.release_date
+                            ).getFullYear(),
+                          };
+                        } catch (error) {
+                          console.error(
+                            "Error fetching album details for update:",
+                            error
+                          );
+                        }
+                      }
+
                       const album = {
                         id: review.spotifyId,
                         name: details?.albumName || "Unknown Album",
                         images: [{ url: albumImages[review.spotifyId] || "" }],
-                        release_date:
-                          review.releaseDate ||
-                          `${details?.releaseYear || 2023}-01-01`,
+                        release_date: details?.releaseYear
+                          ? `${details.releaseYear}-01-01`
+                          : "2023-01-01",
                         artists: [
                           {
                             name: details?.artistName || "Unknown Artist",
@@ -830,12 +833,13 @@ export default function HomeScreen() {
             <View style={styles.reviewMainContent}>
               <Image source={{ uri: albumImage }} style={styles.albumCover} />
               <View style={styles.reviewTextContainer}>
-                <ScrollView
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={false}
+                <Text
+                  style={styles.reviewText}
+                  numberOfLines={5}
+                  ellipsizeMode="tail"
                 >
-                  <Text style={styles.reviewText}>{review.comment}</Text>
-                </ScrollView>
+                  {review.comment}
+                </Text>
               </View>
             </View>
           </View>
@@ -844,14 +848,19 @@ export default function HomeScreen() {
         {/* Footer with rating and like button */}
         <View style={styles.reviewFooter}>
           <View style={styles.rating}>
-            {[...Array(5)].map((_, i) => (
-              <Ionicons
-                key={i}
-                name={i < review.rating ? "star" : "star-outline"}
-                size={16}
-                color="#FFD700"
-              />
-            ))}
+            {[...Array(5)].map((_, i) => {
+              const diff = review.rating - i;
+              let iconName = "star-outline";
+              if (diff >= 1) {
+                iconName = "star";
+              } else if (diff >= 0.5) {
+                iconName = "star-half";
+              }
+
+              return (
+                <Ionicons key={i} name={iconName} size={16} color="#FFD700" />
+              );
+            })}
           </View>
           <TouchableOpacity
             onPress={() => toggleLike(review.id)}
@@ -972,36 +981,79 @@ export default function HomeScreen() {
         }}
       />
       <Modal
-        animationType="slide"
         transparent={true}
+        animationType="none"
         visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(!modalVisible);
-        }}
+        onRequestClose={closeDeleteModal}
       >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalText}>
-              Are you sure you want to delete your review?
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonYes]}
-                onPress={() => handleDeleteReview(selectedReviewId)}
+        <TouchableWithoutFeedback onPress={closeDeleteModal}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              justifyContent: "flex-end",
+            }}
+          >
+            <TouchableWithoutFeedback>
+              <Animated.View
+                style={{
+                  backgroundColor: "#1E1E1E",
+                  borderTopLeftRadius: 20,
+                  borderTopRightRadius: 20,
+                  padding: 20,
+                  transform: [{ translateY: slideAnim }],
+                }}
               >
-                <Text style={styles.textStyle}>Yes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonNo]}
-                onPress={() => setModalVisible(!modalVisible)}
-              >
-                <Text style={styles.textStyle}>No</Text>
-              </TouchableOpacity>
-            </View>
+                <Text
+                  style={{
+                    color: "white",
+                    fontSize: 18,
+                    textAlign: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  Are you sure you want to delete your review?
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-around",
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: "#FF0000",
+                      paddingVertical: 10,
+                      paddingHorizontal: 20,
+                      borderRadius: 10,
+                    }}
+                    onPress={() => handleDeleteReview(selectedReviewId)}
+                  >
+                    <Text style={{ color: "white", fontWeight: "bold" }}>
+                      Yes
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: "#888",
+                      paddingVertical: 10,
+                      paddingHorizontal: 20,
+                      borderRadius: 10,
+                    }}
+                    onPress={closeDeleteModal}
+                  >
+                    <Text style={{ color: "white", fontWeight: "bold" }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
-      <AlbumImageModal />
     </View>
   );
 }

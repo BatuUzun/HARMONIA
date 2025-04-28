@@ -7,7 +7,9 @@ import {
   IS_DEVELOPMENT,
   BACKEND_IMAGE_DOWNLOAD_URL,
   CONVERSATION_URL,
+  BACKEND_USER_FOLLOW_URL,
 } from "../constants/apiConstants";
+import { getAccessToken } from "../api/spotify";
 
 const searchPeople = async (username) => {
   try {
@@ -273,6 +275,120 @@ const getConversationSummaries = async (userId) => {
   }
 };
 
+const getFollowedUsers = async (userId) => {
+  try {
+    const response = await axios.get(
+      `${BACKEND_USER_FOLLOW_URL}/user-follow/${userId}/followed`
+    );
+    if (IS_DEVELOPMENT) {
+      console.log("✅ Followed Users Response:", response.data);
+    }
+    return response.data; // returns Set<Long> — will come as array in JS
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error fetching followed users:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+const getUserInteractions = async (followedUserIds, cursors) => {
+  const response = await axios.post(
+    `${BACKEND_USER_FOLLOW_URL}/user-follow/interactions`,
+    followedUserIds,
+    {
+      params: {
+        reviewCursor: cursors.reviewCursor,
+        reviewLikeCursor: cursors.reviewLikeCursor,
+        likeCursor: cursors.likeCursor,
+        commentCursor: cursors.commentCursor,
+      },
+    }
+  );
+  return response.data;
+};
+
+const getAlbumInfoBySpotifyId = async (spotifyId) => {
+  try {
+    const accessToken = await getAccessToken();
+    const url = `https://api.spotify.com/v1/albums/${spotifyId}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("❌ Failed to fetch album info from Spotify:", error);
+    return null;
+  }
+};
+
+const getReviewActivities = async (userIds, reviewCursor = null) => {
+  try {
+    const response = await axios.post(
+      `${BACKEND_USER_FOLLOW_URL}/user-follow/interactions/reviews`,
+      userIds,
+      {
+        params: reviewCursor ? { reviewCursor: reviewCursor } : {}, // ✅ explicitly send correct param key
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error fetching review activities:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+const getReviewLikeActivities = async (userIds, reviewLikeCursor = null) => {
+  try {
+    const response = await axios.post(
+      `${BACKEND_USER_FOLLOW_URL}/user-follow/interactions/review-likes`,
+      userIds,
+      {
+        params: reviewLikeCursor ? { reviewLikeCursor: reviewLikeCursor } : {}, // ✅ match backend param name
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error fetching review like activities:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+const getReviewCommentActivities = async (userIds, commentCursor = null) => {
+  try {
+    const response = await axios.post(
+      `${BACKEND_USER_FOLLOW_URL}/user-follow/interactions/review-comments`,
+      userIds,
+      {
+        params: commentCursor ? { commentCursor: commentCursor } : {}, // ✅ match backend param name
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error fetching review comment activities:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
 export {
   searchPeople,
   getUserProfile,
@@ -287,4 +403,10 @@ export {
   getProfileImageBase64,
   getConversationSummaries,
   getMessagesByConversationId,
+  getFollowedUsers,
+  getUserInteractions,
+  getAlbumInfoBySpotifyId,
+  getReviewActivities,
+  getReviewLikeActivities,
+  getReviewCommentActivities,
 };

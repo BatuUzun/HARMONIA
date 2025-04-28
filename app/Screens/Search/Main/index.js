@@ -533,21 +533,6 @@ function SearchScreen() {
                     >
                       {item.name}
                     </Text>
-                    {selectedOption === "People" && (
-                      <TouchableOpacity
-                        style={styles.followButton}
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          setTimeout(() => saveSearchQuery(item.name), 3000);
-                        }}
-                      >
-                        <Ionicons
-                          name="person-add-outline"
-                          size={20}
-                          color="white"
-                        />
-                      </TouchableOpacity>
-                    )}
                   </View>
                 </TouchableOpacity>
               )}
@@ -694,12 +679,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     flexShrink: 1,
-    marginLeft: 10,
-  },
-  followButton: {
-    backgroundColor: "#444",
-    borderRadius: 5,
-    padding: 5,
     marginLeft: 10,
   },
   recentSearchesContainer: {
