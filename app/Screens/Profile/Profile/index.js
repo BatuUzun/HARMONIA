@@ -1479,10 +1479,12 @@ export default function ProfileScreen() {
             <View style={styles.separator} />
             <Text style={styles.favoriteTitle}>FAVORITE ALBUMS</Text>
             <View style={styles.gridContainer}>
-              {[
-                ...profile.favoriteAlbums,
-                ...Array(4 - profile.favoriteAlbums.length).fill(null),
-              ].map((album, index) => (
+            {(
+  currentUserId === loggedInUserId
+    ? [...profile.favoriteAlbums, ...Array(4 - profile.favoriteAlbums.length).fill(null)]
+    : profile.favoriteAlbums
+).map((album, index) => (
+
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "albums")}
@@ -1525,10 +1527,12 @@ export default function ProfileScreen() {
             <View style={styles.separator} />
             <Text style={styles.favoriteTitle}>FAVORITE ARTISTS</Text>
             <View style={styles.gridContainer}>
-              {[
-                ...profile.favoriteArtists,
-                ...Array(4 - profile.favoriteArtists.length).fill(null),
-              ].map((artist, index) => (
+            {(
+  currentUserId === loggedInUserId
+    ? [...profile.favoriteArtists, ...Array(4 - profile.favoriteArtists.length).fill(null)]
+    : profile.favoriteArtists
+).map((artist, index) => (
+
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "artists")}
