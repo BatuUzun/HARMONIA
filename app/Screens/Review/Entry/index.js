@@ -18,7 +18,6 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { searchAlbums, getAccessToken } from "../../../api/spotify";
 import { Dimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,6 +26,7 @@ import {
   IS_DEVELOPMENT,
 } from "../../../constants/apiConstants";
 import { AuthContext } from "../../../context/AuthContext";
+import styles from "./indexstyle";
 
 /*
   TODOs: 
@@ -48,9 +48,6 @@ export default function ReviewScreen() {
   const ratingWidth = totalStars * (starSize + starPadding); // Total width of rating bar
   const [gestureX, setGestureX] = useState(0);
   const [reviewText, setReviewText] = useState("");
-  const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [clearIconOpacity] = useState(new Animated.Value(0));
   const [isModalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -58,7 +55,6 @@ export default function ReviewScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState([]);
-  const [animation] = useState(new Animated.Value(0)); // Initial height is 0
   const [refreshing, setRefreshing] = useState(false);
   const screenWidth = Dimensions.get("window").width;
   const [accessToken, setAccessToken] = useState(null);
@@ -67,7 +63,6 @@ export default function ReviewScreen() {
     setReviewToUpdate(null);
     setRating(0);
     setReviewText("");
-    setDate(new Date());
   };
 
   useEffect(() => {
@@ -91,7 +86,6 @@ export default function ReviewScreen() {
         if (!isUpdateFlow) {
           setRating(0);
           setReviewText("");
-          setDate(new Date());
           setReviewToUpdate(null);
         }
       } catch (e) {
@@ -105,7 +99,6 @@ export default function ReviewScreen() {
         setReviewToUpdate(parsedReview);
         setRating(parsedReview.rating || 0);
         setReviewText(parsedReview.comment || "");
-        setDate(new Date(parsedReview.createdAt));
 
         // Only fetch from Spotify if we don't have selectedAlbum yet
         if (!selectedAlbumRaw) {
@@ -174,39 +167,7 @@ export default function ReviewScreen() {
     }
   };
 
-  const handleDateChange = (event, selectedDate) => {
-    if (selectedDate) {
-      const currentDate = new Date();
-      if (selectedDate <= currentDate) {
-        setDate(selectedDate);
-      }
-    }
-  };
 
-  const clearDate = () => {
-    setShowDatePicker(false);
-
-    Animated.timing(clearIconOpacity, {
-      toValue: 0,
-      duration: 0,
-      easing: Easing.ease,
-      useNativeDriver: true,
-    }).start(() => setDate(null));
-  };
-
-  const openDatePicker = () => {
-    if (reviewToUpdate) return;
-    setShowDatePicker((prev) => !prev); // Toggle picker visibility
-    if (!date) {
-      setDate(new Date());
-    }
-    Animated.timing(animation, {
-      toValue: showDatePicker ? 0 : 1, // 0 = collapsed, 1 = expanded
-      duration: 300, // Smooth animation duration
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: false, // Required for height animations
-    }).start();
-  };
 
   const loadMoreResults = () => {
     if (!isLoading && searchQuery.trim()) {
@@ -318,7 +279,6 @@ export default function ReviewScreen() {
         spotifyId: selectedAlbum.id,
         rating: rating,
         comment: reviewText,
-        createdAt: date.toISOString(),
       };
 
       const response = await fetch(
@@ -434,7 +394,6 @@ export default function ReviewScreen() {
         spotifyId: selectedAlbum.id,
         rating: rating,
         comment: reviewText,
-        createdAt: date.toISOString(),
       };
 
       const response = await fetch(`${BACKEND_REVIEW_URL}/review/add-review`, {
@@ -469,7 +428,6 @@ export default function ReviewScreen() {
     setReviewToUpdate(null);
     setRating(0);
     setReviewText("");
-    setDate(new Date());
     setSearchQuery("");
     setSearchResults([]);
 
@@ -549,51 +507,8 @@ export default function ReviewScreen() {
       </TouchableOpacity>
 
       {/* Date Picker */}
-      <TouchableOpacity
-        onPress={openDatePicker}
-        style={styles.dateButton}
-        disabled={!!reviewToUpdate}
-      >
-        <View style={styles.dateTextContainer}>
-          <Text style={styles.dateText}>
-            {date
-              ? date.toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "long",
-                  year: "numeric",
-                  weekday: "long",
-                })
-              : "Add a date..."}{" "}
-          </Text>
-        </View>
-
-        {date && (
-          <Animated.View style={{ opacity: clearIconOpacity }}>
-            <TouchableOpacity onPress={clearDate}>
-              <Ionicons name="close-outline" size={24} color="white" />
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-      </TouchableOpacity>
-      <Animated.View
-        style={{
-          overflow: "hidden",
-          height: animation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 250], // Expand up to 250px
-          }),
-        }}
-      >
-        {showDatePicker && (
-          <DateTimePicker
-            value={date || new Date()}
-            mode="date"
-            display="spinner"
-            onChange={handleDateChange}
-            maximumDate={new Date()}
-          />
-        )}
-      </Animated.View>
+      
+      
 
       {/* Star Rating */}
       <View style={styles.ratingWrapper}>
@@ -755,220 +670,4 @@ export default function ReviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#1E1E1E", padding: 20 },
-  albumSelector: {
-    backgroundColor: "#333",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 15,
-  },
-  selectAlbumText: { color: "grey", textAlign: "center" },
-  albumInfo: { flexDirection: "row", alignItems: "center" },
-  albumImage: { width: 50, height: 50, marginRight: 10 },
-  albumTitle: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 14,
-    maxWidth: 275, // Limit text width to avoid overflow
-    overflow: "hidden",
-    textAlign: "left",
-  },
 
-  albumYear: { color: "gray", fontSize: 12, marginTop: 5 },
-  picker: { backgroundColor: "#333", color: "white", marginBottom: 15 },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#1E1E1E",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: 105,
-    paddingHorizontal: 20,
-  },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#333",
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 15,
-  },
-  icon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    color: "white",
-    fontSize: 16,
-  },
-  clearButton: {
-    marginLeft: 10,
-  },
-  albumItem: {
-    alignItems: "center",
-    width: "48%",
-    marginBottom: 15,
-  },
-  albumThumbnail: {
-    width: "100%",
-    height: 150,
-    borderRadius: 8,
-  },
-  albumName: {
-    color: "white",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 5,
-  },
-  resultsList: {
-    paddingHorizontal: 10,
-  },
-  closeButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  dateButton: {
-    backgroundColor: "#333",
-    paddingHorizontal: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    minHeight: 50,
-    width: "100%", // ✅ Full width
-    marginHorizontal: 0, // ✅ Ensures it touches the left & right edges
-  },
-
-  dateTextContainer: {
-    flex: 1, // ✅ Ensures text expands properly without breaking height
-    justifyContent: "center", // ✅ Centers the text properly
-  },
-
-  dateText: {
-    color: "white",
-    fontSize: 16,
-    textAlignVertical: "center", // ✅ Prevents height issues
-    includeFontPadding: false, // ✅ Removes unwanted padding from text
-  },
-  starRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 15,
-    padding: 0,
-    paddingBottom: 15,
-    borderRadius: 10,
-    justifyContent: "left",
-  },
-  ratingWrapper: {
-    alignItems: "flex-start", // Ensures "Rate" text is aligned left
-  },
-  ratingText: {
-    color: "lightgray",
-    paddingTop: 10,
-    fontSize: 18,
-    marginBottom: 5, // Adds spacing between text and stars
-  },
-  textInput: {
-    backgroundColor: "#333",
-    color: "white",
-    padding: 10,
-    borderRadius: 10,
-    height: 330,
-    textAlignVertical: "top",
-    marginBottom: 15,
-  },
-  saveButton: {
-    backgroundColor: "#007AFF",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  saveButtonText: { color: "white", fontWeight: "bold" },
-  closeButton: {
-    position: "absolute",
-    top: 60,
-    left: 10,
-    zIndex: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingVertical: 5,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-  },
-  closeButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  searchHistoryContainer: {
-    width: "100%",
-    marginBottom: 15,
-  },
-  searchHistoryTitle: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  historyItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between", // Keep text on the left and "X" on the right
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 5,
-  },
-  historyText: {
-    color: "lightgrey",
-    fontSize: 14,
-  },
-  clearHistoryButton: {
-    alignItems: "center",
-  },
-  clearHistoryButtonText: {
-    color: "white",
-    fontSize: 14,
-  },
-  noHistoryText: {
-    color: "gray",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  searchHistoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between", // ✅ Left (title) & Right (clear button)
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  dateText: { color: "white", textAlign: "center" },
-  saveButton: {
-    backgroundColor: "#007AFF",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  updateButton: {
-    backgroundColor: "#4CAF50", // Different color for update
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  buttonText: {
-    color: "white",
-    fontWeight: "bold",
-  },
-  characterCount: {
-    position: "absolute",
-    top: -20,
-    right: 5,
-    color: "gray",
-    fontSize: 12,
-  },
-});
