@@ -47,15 +47,24 @@ import {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { logout } = useContext(AuthContext);
-  const { userId: loggedInUserId } = useContext(AuthContext);
-  const { userId } = useLocalSearchParams();
-  const [currentUserId, setCurrentUserId] = useState(null);
   const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
   const navigation = useNavigation();
   const [profileLoading, setProfileLoading] = useState(false);
 
-
+  const { logout } = useContext(AuthContext);
+  const { userId: loggedInUserId } = useContext(AuthContext); // your ID
+  const { userId: routeUserId } = useLocalSearchParams(); // ID from route
+  
+  const [currentUserId, setCurrentUserId] = useState(null); // the profile being viewed
+  
+  useEffect(() => {
+    const viewingUserId = routeUserId || loggedInUserId;
+    setCurrentUserId(viewingUserId);
+  
+    console.log("🔐 Logged-in user ID:", loggedInUserId);
+    console.log("👤 Viewing profile user ID:", viewingUserId);
+  }, [routeUserId, loggedInUserId]);
+  
   useFocusEffect(
     React.useCallback(() => {
       console.log("📌 ProfileScreen focus oldu, veriler tazeleniyor...");
@@ -64,12 +73,13 @@ export default function ProfileScreen() {
   );
 
   useEffect(() => {
-    if (userId) {
-      setCurrentUserId(userId);
+    if (routeUserId) {
+      setCurrentUserId(routeUserId); // Viewing another profile
     } else {
-      setCurrentUserId(loggedInUserId);
+      setCurrentUserId(loggedInUserId); // Viewing own profile
     }
-  }, [userId, loggedInUserId]);
+  }, [routeUserId, loggedInUserId]);
+  
 
   useEffect(() => {
     if (currentUserId) {
@@ -292,7 +302,7 @@ export default function ProfileScreen() {
         const response = await fetch(`${BACKEND_REVIEW_LIKE_URL}/review-like/like`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: currentUserId, reviewId }),
+          body: JSON.stringify({ userId: loggedInUserId, reviewId }),
         });
         const data = await response.json();
         if (response.ok && data.success) {
@@ -328,7 +338,7 @@ export default function ProfileScreen() {
     await Promise.all(
       reviewsData.map(async (review) => {
         try {
-          const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${currentUserId}`;
+          const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${loggedInUserId}`;
           const response = await fetch(url);
           const text = await response.text();
           const data = JSON.parse(text);
@@ -1476,7 +1486,11 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "albums")}
-                  onLongPress={() => album && handleLongPressFavorite(album)}
+                  onLongPress={
+                    currentUserId === loggedInUserId && album
+                      ? () => handleLongPressFavorite(album)
+                      : undefined
+                  }
                   delayLongPress={500}
                   style={styles.albumContainer}
                 >
@@ -1518,8 +1532,12 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "artists")}
-                  onLongPress={() => artist && handleLongPressFavorite(artist)}
-                  delayLongPress={500}
+                  onLongPress={
+                    currentUserId === loggedInUserId && artist
+                      ? () => handleLongPressFavorite(artist)
+                      : undefined
+                  }
+                                    delayLongPress={500}
                   style={styles.artistContainer}
                 >
                   {artist ? (
