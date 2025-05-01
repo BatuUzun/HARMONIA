@@ -389,6 +389,67 @@ const getReviewCommentActivities = async (userIds, commentCursor = null) => {
   }
 };
 
+const getCommentCount = async (reviewId) => {
+  try {
+    const response = await axios.get(
+      `${BACKEND_REVIEW_URL}/api/comment/count/${reviewId}`
+    );
+    if (IS_DEVELOPMENT) {
+      console.log(`✅ Comment count for review ${reviewId}:`, response.data);
+    }
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        "❌ Error fetching comment count:",
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+const getCommentsByReviewId = async (reviewId, page = 0, referenceTime = null) => {
+  try {
+    const params = { page };
+    if (referenceTime) params.referenceTime = referenceTime;
+    const response = await axios.get(
+      `${BACKEND_REVIEW_URL}/api/comment/get-comments/${reviewId}`,
+      { params }
+    );
+    if (IS_DEVELOPMENT) {
+      console.log("✅ getCommentsByReviewId:", response.data);
+    }
+    return response.data; // this is a Page<ReviewCommentResponseDTO>
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error("❌ getCommentsByReviewId error:", error.response?.data || error.message);
+    }
+    throw error;
+  }
+};
+
+const deleteCommentById = async (commentId) => {
+  try {
+    const response = await axios.delete(
+      `${BACKEND_REVIEW_URL}/api/comment/delete-comment/${commentId}`
+    );
+    if (IS_DEVELOPMENT) {
+      console.log(`✅ Deleted comment ${commentId}:`, response.data);
+    }
+    return response.data;
+  } catch (error) {
+    if (IS_DEVELOPMENT) {
+      console.error(
+        `❌ Error deleting comment ${commentId}:`,
+        error.response?.data || error.message
+      );
+    }
+    throw error;
+  }
+};
+
+
 export {
   searchPeople,
   getUserProfile,
@@ -409,4 +470,8 @@ export {
   getReviewActivities,
   getReviewLikeActivities,
   getReviewCommentActivities,
+  getCommentCount,
+  getCommentsByReviewId,
+  deleteCommentById,
+
 };

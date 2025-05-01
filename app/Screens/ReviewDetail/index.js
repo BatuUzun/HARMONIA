@@ -1,55 +1,52 @@
-import React, { useEffect, useState, useContext, useRef } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   Image,
   ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  Keyboard,
+  SafeAreaView,
+  Linking,
+  Modal,
   TextInput,
   ActivityIndicator,
-  Alert,
-  SafeAreaView,
-  TouchableOpacity,
-  Keyboard,
-  TouchableWithoutFeedback,
-  Modal,
-  Dimensions,
-  Animated,
-  KeyboardAvoidingView,
-  Pressable,
-  Platform,
-  Linking,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useLocalSearchParams } from "expo-router";
-import { BACKEND_COMMENT_URL } from "../../constants/apiConstants";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
-import { getAccessToken } from "../../api/spotify";
-import { getUserProfile } from "../../api/backend";
+import FontAwesome from "react-native-vector-icons/FontAwesome";
 import {
   BACKEND_PROFILE_PICTURE_DOWNLOADER_URL,
   BACKEND_REVIEW_LIKE_URL,
+  BACKEND_REVIEW_URL,
+  BACKEND_IMAGE_DOWNLOAD_URL,
 } from "../../constants/apiConstants";
-import { IS_DEVELOPMENT } from "../../constants/apiConstants";
-import FontAwesome from "react-native-vector-icons/FontAwesome";
+import { getAccessToken } from "../../api/spotify";
+import { 
+  getCommentCount, 
+  likeReview, 
+  unlikeReview, 
+  getLikeCount,
+  getCommentsByReviewId,
+  getUserProfile,
+  deleteCommentById
+} from "../../api/backend";
+import axios from "axios";
+import { Pressable } from "react-native"; // ✅ Add this import
+import { Alert } from "react-native";
+import { useFocusEffect } from "expo-router";
 
 const ReviewDetail = () => {
   const { userId } = useContext(AuthContext);
   const params = useLocalSearchParams();
   const screenHeight = Dimensions.get("window").height;
-  const modalHeight = Dimensions.get("window").height * 0.3;
-  const [isNewDataComing, setIsNewDataComing] = useState(false);
   const defaultProfileImage = require("../../../assets/images/default-profile-photo.webp");
   const router = useRouter();
-
-  const getProfileImageUrl = (fileName) => {
-    if (!fileName || fileName === "default.png") {
-      return Image.resolveAssetSource(defaultProfileImage).uri;
-    }
-    return `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${fileName}`;
-  };
-
+  const [newComment, setNewComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
+  
   const {
     id,
     username,
@@ -57,7 +54,6 @@ const ReviewDetail = () => {
     createdAt,
     comment,
     rating,
-    likeCount,
     albumImage: paramAlbumImage,
     albumName: paramAlbumName,
     artistName: paramArtistName,
@@ -68,108 +64,133 @@ const ReviewDetail = () => {
     reviewUserId,
   } = params;
 
-  console.log("ReviewDetail params:", params);
-
   const [albumImage, setAlbumImage] = useState(null);
   const [albumName, setAlbumName] = useState(null);
   const [artistName, setArtistName] = useState(null);
   const [releaseYear, setReleaseYear] = useState(null);
-
-  const [comments, setComments] = useState([]);
-  const [loadingComments, setLoadingComments] = useState(true);
-  const [newComment, setNewComment] = useState("");
-  const [sending, setSending] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-
-  // Use useRef for animated value to prevent recreation
-  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
+  const [profileImageUri, setProfileImageUri] = useState(null);
 
   const [isLiked, setIsLiked] = useState(
-    paramIsLiked === true || paramIsLiked === "true" ? true : false
+    paramIsLiked === true || paramIsLiked === "true"
   );
-  const [currentLikeCount, setCurrentLikeCount] = useState(likeCount || 0);
+  const [currentLikeCount, setCurrentLikeCount] = useState(0);
   const [likeId, setLikeId] = useState(paramLikeId || null);
-
+  const [commentCount, setCommentCount] = useState(0);
   const [albumModalVisible, setAlbumModalVisible] = useState(false);
+  
+  // New state for comments
+  const [comments, setComments] = useState([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [hasMoreComments, setHasMoreComments] = useState(true);
+  const [userCache, setUserCache] = useState({});
 
-  useEffect(() => {
-    if (id) {
-      setIsLiked(
-        paramIsLiked === true || paramIsLiked === "true" ? true : false
-      );
-      setCurrentLikeCount(Number(likeCount) || 0);
-      setLikeId(paramLikeId || null);
-    }
-  }, [id, paramIsLiked, likeCount, paramLikeId]);
-
-  const openModal = () => {
-    setModalVisible(true);
-    Animated.spring(slideAnim, {
-      toValue: 0,
-      friction: 5, // sürtünme (ne kadar hızlı duracağı)
-      tension: 50, // esnekliği kontrol eder (yüksek olursa daha çok zıplar)
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeModal = () => {
-    setNewComment("");
-    Animated.timing(slideAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: true, // Consistent native driver
-    }).start(() => setModalVisible(false));
-  };
-
-  useEffect(() => {
-    if (!id) return;
-
-    setIsNewDataComing(true);
-
-    // Önce her şeyi temizle
-    setComments([]);
-    setAlbumImage(null);
-    setAlbumName(null);
-    setArtistName(null);
-    setReleaseYear(null);
-    setIsLiked(false);
-    setCurrentLikeCount(0);
-    setLikeId(null);
-    setLoadingComments(true);
-
-    const fetchComments = async () => {
-      try {
-        const response = await fetch(
-          `${BACKEND_COMMENT_URL}/get-comments/${id}`
-        );
-        if (!response.ok) throw new Error("Failed to fetch comments");
-        const data = await response.json();
-        const commentsWithProfiles = await Promise.all(
-          (data?.content || []).map(async (comment) => {
-            const userProfile = await getUserProfile(comment.userId);
-            return {
-              ...comment,
-              userId: comment.userId,
-              username: userProfile?.username || `User ${comment.userId}`,
-              profileImage: userProfile?.profileImage || null,
-            };
-          })
-        );
-        setComments(
-          commentsWithProfiles.sort(
-            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-          )
-        );
-      } catch (error) {
-        if (IS_DEVELOPMENT) {
-          console.error("Error fetching comments:", error);
-          Alert.alert("Error", "Could not load comments");
+  useFocusEffect(
+    React.useCallback(() => {
+      // Clear album image on focus to force re-load
+      setAlbumImage(null);
+  
+      const fetchAlbumInfo = async () => {
+        try {
+          if (spotifyId) {
+            const token = await getAccessToken();
+            const response = await fetch(
+              `https://api.spotify.com/v1/albums/${spotifyId}`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            const data = await response.json();
+  
+            setAlbumImage(data.images?.[0]?.url || null);
+            setAlbumName(data.name || "Unknown Album");
+            setArtistName(data.artists?.[0]?.name || "Unknown Artist");
+            setReleaseYear(new Date(data.release_date).getFullYear() || "Unknown Year");
+          } else {
+            setAlbumImage(paramAlbumImage || null);
+            setAlbumName(paramAlbumName || null);
+            setArtistName(paramArtistName || null);
+            setReleaseYear(paramReleaseYear || null);
+          }
+        } catch (error) {
+          console.error("Error fetching album info from Spotify:", error);
         }
-      } finally {
-        setLoadingComments(false);
-      }
-    };
+      };
+  
+      fetchAlbumInfo();
+    }, [spotifyId])
+  );
+  
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+  
+    setSendingComment(true);
+    try {
+      const response = await axios.post(`${BACKEND_REVIEW_URL}/api/comment/add-comment`, {
+        userId,
+        reviewId: id,
+        comment: newComment.trim(),
+      });
+  
+      const addedComment = response.data;
+      setComments((prev) => [addedComment, ...prev]); // prepend
+      setCommentCount((prev) => prev + 1);
+      setNewComment(""); // clear input
+    } catch (err) {
+      Alert.alert("Error", "Failed to post comment.");
+      console.error("Failed to post comment:", err);
+    } finally {
+      setSendingComment(false);
+    }
+  };
+  
+  // New function to get profile image as base64
+  const getProfileImageBase64 = async (fileName) => {
+    if (!fileName || fileName === "default.png") {
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+    
+    try {
+      const response = await fetch(
+        `${BACKEND_IMAGE_DOWNLOAD_URL}/profile-picture-downloader/download/${fileName}`
+      );
+      const base64 = await response.text(); // because your endpoint returns plain text
+      return `data:image/png;base64,${base64}`;
+    } catch (error) {
+      console.error("Error fetching image:", error);
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+  };
 
+  // Cache for base64 images
+  const [imageCache, setImageCache] = useState({});
+
+  // Function to get image from cache or fetch it
+  const getProfileImage = async (fileName) => {
+    if (!fileName || fileName === "default.png") {
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+    
+    // Check if image is in cache
+    if (imageCache[fileName]) {
+      return imageCache[fileName];
+    }
+    
+    // If not in cache, fetch and cache it
+    try {
+      const base64Image = await getProfileImageBase64(fileName);
+      setImageCache(prev => ({
+        ...prev,
+        [fileName]: base64Image
+      }));
+      return base64Image;
+    } catch (error) {
+      console.error("Error getting profile image:", error);
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+  };
+
+  useEffect(() => {
     const fetchAlbumInfo = async () => {
       try {
         if (spotifyId) {
@@ -181,7 +202,7 @@ const ReviewDetail = () => {
             }
           );
           const data = await response.json();
-
+  
           setAlbumImage(data.images?.[0]?.url || null);
           setAlbumName(data.name || "Unknown Album");
           setArtistName(data.artists?.[0]?.name || "Unknown Artist");
@@ -189,7 +210,6 @@ const ReviewDetail = () => {
             new Date(data.release_date).getFullYear() || "Unknown Year"
           );
         } else {
-          // Eğer spotifyId yoksa params'tan gelen bilgileri kullan
           setAlbumImage(paramAlbumImage || null);
           setAlbumName(paramAlbumName || null);
           setArtistName(paramArtistName || null);
@@ -199,121 +219,93 @@ const ReviewDetail = () => {
         console.error("Error fetching album info from Spotify:", error);
       }
     };
-
-    const applyBasicParams = () => {
-      setIsLiked(
-        paramIsLiked === true || paramIsLiked === "true" ? true : false
-      );
-      setCurrentLikeCount(Number(likeCount) || 0);
-      setLikeId(paramLikeId || null);
-    };
-
-    applyBasicParams();
-    fetchComments();
-    fetchAlbumInfo();
-    setIsNewDataComing(false);
-  }, [id]);
-
-  const handleSendComment = async () => {
-    if (!newComment.trim()) return;
-
-    setSending(true);
-    try {
-      const response = await fetch(`${BACKEND_COMMENT_URL}/add-comment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          reviewId: id,
-          comment: newComment,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to post comment");
-
-      const savedComment = await response.json(); // zaten direkt yorum objesi
-      const userProfile = await getUserProfile(savedComment.userId);
-
-      setComments((prev) => [
-        {
-          ...savedComment,
-          userId: savedComment.userId,
-          username: userProfile?.username || `User ${savedComment.userId}`,
-          profileImage: userProfile?.profileImage || null, // Burası eksikti!
-        },
-        ...prev,
-      ]);
-
-      setNewComment("");
-      closeModal();
-    } catch (error) {
-      console.error("Error posting comment:", error);
-      Alert.alert("Error", "Could not send comment");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleDeleteComment = async (commentId) => {
-    try {
-      const response = await fetch(
-        `${BACKEND_COMMENT_URL}/delete-comment/${commentId}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete comment");
+  
+    const fetchCommentCount = async () => {
+      try {
+        const count = await getCommentCount(id);
+        setCommentCount(count);
+      } catch (err) {
+        console.error("Error fetching comment count:", err);
       }
+    };
+  
+    const loadProfileImage = async () => {
+      if (profileImage) {
+        const imageUri = await getProfileImage(profileImage);
+        setProfileImageUri(imageUri);
+      }
+    };
+  
+    if (id) {
+      // 🔄 Reset comment state to prevent showing old data
+      setComments([]);
+      setCurrentPage(0);
+      setHasMoreComments(true);
+  
+      fetchAlbumInfo();
+      fetchCommentCount();
+      fetchComments(); // Fetch comments for new review
+      loadProfileImage();
+    }
+  }, [id, profileImage]);
 
-      setComments((prevComments) =>
-        prevComments.filter((comment) => comment.id !== commentId)
-      );
+  const fetchComments = async (page = 0) => {
+    if (loadingComments || !id) return;
+    
+    try {
+      setLoadingComments(true);
+      const response = await getCommentsByReviewId(id, page);
+      
+      // Handle the response based on the ReviewCommentResponseDTO structure
+      if (response && Array.isArray(response.content)) {
+        const commentData = response.content;
+        if (Array.isArray(response.content)) {
+          const commentData = response.content;
+        
+          setComments(prev => {
+            // Filter out already displayed comments by id
+            const existingIds = new Set(prev.map(c => c.id));
+            const newComments = commentData.filter(c => !existingIds.has(c.id));
+            return page === 0 ? newComments : [...prev, ...newComments];
+          });
+        
+          setCurrentPage(page);
+          setHasMoreComments(!response.last);
+        } else {
+          setHasMoreComments(false);
+        }
+        
+        
+        setCurrentPage(page);
+        setHasMoreComments(!response.last);
+      } else {
+        setHasMoreComments(false);
+      }
     } catch (error) {
-      console.error("Error deleting comment:", error);
-      Alert.alert("Error", "Could not delete comment");
+      console.error("Error fetching comments:", error);
+    } finally {
+      setLoadingComments(false);
     }
   };
 
-  const handleGoBack = () => {
-    // Yorumlar
-    setComments([]);
-    setLoadingComments(true);
-    setNewComment("");
-    setModalVisible(false);
-
-    // Review bilgileri
-    setAlbumImage(null);
-    setAlbumName(null);
-    setArtistName(null);
-    setReleaseYear(null);
-
-    // Beğeni bilgileri
-    setIsLiked(false);
-    setCurrentLikeCount(0);
-    setLikeId(null);
-
-    // Keyboard
-    Keyboard.dismiss();
-
-    // Geri git
-    router.back();
+  const loadMoreComments = () => {
+    if (hasMoreComments && !loadingComments) {
+      fetchComments(currentPage + 1);
+    }
   };
 
   const handleToggleLike = async () => {
+    
     const previousIsLiked = isLiked;
     const previousLikeCount = currentLikeCount;
     const previousLikeId = likeId;
 
     try {
       if (isLiked) {
-        // Önce hemen UI'da unlike göster
         setIsLiked(false);
         setCurrentLikeCount((prev) => Math.max(prev - 1, 0));
         setLikeId(null);
 
-        // Sonra API'ye unlike isteği gönder
         const response = await fetch(
           `${BACKEND_REVIEW_LIKE_URL}/review-like/unlike/${likeId}`,
           {
@@ -323,11 +315,9 @@ const ReviewDetail = () => {
         );
         if (!response.ok) throw new Error("Unlike failed");
       } else {
-        // Önce hemen UI'da like göster
         setIsLiked(true);
         setCurrentLikeCount((prev) => prev + 1);
 
-        // Sonra API'ye like isteği gönder
         const response = await fetch(
           `${BACKEND_REVIEW_LIKE_URL}/review-like/like`,
           {
@@ -339,658 +329,318 @@ const ReviewDetail = () => {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error("Like failed");
 
-        setLikeId(data.data); // likeId'yi kaydet
+        setLikeId(data.data);
       }
     } catch (error) {
       console.error("Error toggling like:", error);
-      Alert.alert("Error", "Could not update like status");
-
-      // HATA OLURSA geri al
       setIsLiked(previousIsLiked);
       setCurrentLikeCount(previousLikeCount);
       setLikeId(previousLikeId);
     }
   };
 
-  const AlbumImageModal = () => {
-    return (
-      <Modal
-        visible={albumModalVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setAlbumModalVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setAlbumModalVisible(false)}>
-          <View style={styles.imageModalBackground}>
-            <TouchableWithoutFeedback>
-              <View style={styles.imageModalContent}>
-                <Image
-                  source={{ uri: albumImage }}
-                  style={styles.imageModalImage}
-                />
-                <Text style={styles.imageModalText}>
-                  {albumName || "Album"}
-                </Text>
-                <Text style={styles.imageModalTextSmall}>
-                  {artistName || "Artist"} • {releaseYear || "Year"}
-                </Text>
-                <TouchableOpacity
-                  style={styles.spotifyButton}
-                  onPress={() => {
-                    if (spotifyId) {
-                      Linking.openURL(
-                        `https://open.spotify.com/album/${spotifyId}`
-                      );
-                    }
-                  }}
-                >
-                  <FontAwesome name="spotify" size={24} color="white" />
-                  <Text style={styles.spotifyButtonText}>Open in Spotify</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-    );
+  const handleGoBack = () => {
+    setAlbumImage(null);
+    setAlbumName(null);
+    setArtistName(null);
+    setReleaseYear(null);
+    setIsLiked(false);
+    setCurrentLikeCount(0);
+    setLikeId(null);
+    Keyboard.dismiss();
+    router.back();
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <AlbumImageModal />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+  const AlbumImageModal = () => (
+    <Modal
+      visible={albumModalVisible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => setAlbumModalVisible(false)}
+    >
+      <TouchableOpacity
+        onPress={() => setAlbumModalVisible(false)}
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.7)",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
       >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 100 }} // Altta boşluk kalır
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Fixed header section */}
-          <View style={styles.reviewInfoContainer}>
-            <View style={styles.userInfo}>
-              <TouchableOpacity
-                onPress={handleGoBack}
-                style={styles.backButton}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="chevron-back" size={28} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  router.push({
-                    pathname: "/Screens/Profile/Profile/",
-                    params: { userId: params.reviewUserId },
-                  });
+        <View style={{ alignItems: "center" }}>
+          <Image
+            source={{ uri: albumImage }}
+            style={{ width: 300, height: 300, borderRadius: 10 }}
+          />
+          <Text style={{ color: "white", marginTop: 10, fontSize: 18 }}>
+            {albumName}
+          </Text>
+          <Text style={{ color: "white" }}>
+            {artistName} • {releaseYear}
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 15 }}
+            onPress={() =>
+              Linking.openURL(`https://open.spotify.com/album/${spotifyId}`)
+            }
+          >
+            <FontAwesome name="spotify" size={28} color="white" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  // Comment item component with user info
+  const CommentItem = ({ item }) => {
+    const [userData, setUserData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    console.log("Rendering comment user ID:", item.userId);
+
+    useEffect(() => {
+      const fetchUserData = async () => {
+        if (userCache[item.userId]) {
+          setUserData(userCache[item.userId]);
+          setLoading(false);
+          return;
+        }
+  
+        try {
+          setLoading(true);
+          const data = await getUserProfile(item.userId);
+          setUserCache((prev) => ({ ...prev, [item.userId]: data }));
+          setUserData(data);
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+        } finally {
+          setLoading(false);
+        }
+      };
+  
+      fetchUserData();
+    }, [item.userId]);
+  
+    const confirmDelete = () => {
+      Alert.alert("Delete Comment", "Are you sure you want to delete this comment?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteCommentById(item.id);
+              setComments((prev) => prev.filter((c) => c.id !== item.id));
+              setCommentCount((prev) => Math.max(prev - 1, 0));
+            } catch (error) {
+              Alert.alert("Error", "Failed to delete comment.");
+            }
+          },
+        },
+      ]);
+    };
+  
+    return (
+      <Pressable
+        onLongPress={userId == item.userId ? confirmDelete : undefined}
+        delayLongPress={500}
+        style={{
+          padding: 10,
+          borderBottomWidth: 0.5,
+          borderBottomColor: "#333",
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({
+                pathname: "/Screens/Profile/Profile/",
+                params: { userId: item.userId },
+              })
+            }
+          >
+            <Text style={{ color: "white", fontWeight: "bold" }}>
+              {loading ? "Loading..." : userData?.username || `User ${item.userId}`}
+            </Text>
+          </TouchableOpacity>
+          <Text style={{ color: "gray", fontSize: 12 }}>
+            {new Date(item.createdAt).toLocaleDateString()}
+          </Text>
+        </View>
+        <Text style={{ color: "white", marginTop: 3 }}>{item.comment}</Text>
+      </Pressable>
+    );
+  };
+  
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "black" }}>
+      <AlbumImageModal />
+      <ScrollView style={{ flex: 1 }}>
+        <View style={{ padding: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <TouchableOpacity onPress={handleGoBack}>
+              <Ionicons name="chevron-back" size={28} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: "/Screens/Profile/Profile/",
+                  params: { userId: reviewUserId },
+                })
+              }
+            >
+              <Image
+                source={{ uri: profileImageUri || Image.resolveAssetSource(defaultProfileImage).uri }}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  marginLeft: 10,
+                  backgroundColor: "gray",
                 }}
-              >
-                {profileImage ? (
-                  <Image
-                    source={{ uri: getProfileImageUrl(profileImage) }}
-                    style={styles.profileImageSmall}
-                  />
-                ) : (
-                  <View style={styles.profileImagePlaceholder} />
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.userTextContainer}>
-                <TouchableOpacity
-                  onPress={() => {
-                    router.push({
-                      pathname: "/Screens/Profile/Profile/",
-                      params: { userId: params.reviewUserId },
-                    });
-                  }}
-                >
-                  <Text style={styles.username}>{username}</Text>
-                </TouchableOpacity>
-                <Text style={styles.date}>
-                  {new Date(createdAt).toLocaleDateString()}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.albumAndCommentContainer}>
-              <View style={styles.albumTopSection}>
-                <TouchableOpacity onPress={() => setAlbumModalVisible(true)}>
-                  <Image
-                    source={{ uri: albumImage }}
-                    style={styles.albumCover}
-                  />
-                </TouchableOpacity>
-
-                <View style={styles.albumInfoTexts}>
-                  <Text style={styles.albumName}>{albumName}</Text>
-                  <Text style={styles.artistYear}>
-                    {artistName} • {releaseYear}
-                  </Text>
-                  <View style={styles.ratingContainer}>
-                    {[...Array(5)].map((_, index) => {
-                      const diff = rating - index;
-                      let iconName = "star-outline";
-                      if (diff >= 0.75) {
-                        iconName = "star";
-                      } else if (diff >= 0.25) {
-                        iconName = "star-half";
-                      }
-                      return (
-                        <Ionicons
-                          key={index}
-                          name={iconName}
-                          size={24}
-                          color="#FFD700"
-                        />
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.reviewCommentSection}>
-                <Text style={styles.reviewText}>{comment}</Text>
-              </View>
-            </View>
-
-            <View style={styles.likeContainer}>
-              <TouchableOpacity
-                onPress={handleToggleLike}
-                activeOpacity={0.7}
-                style={{ flexDirection: "row", alignItems: "center" }}
-              >
-                <Ionicons
-                  name={isLiked ? "heart" : "heart-outline"}
-                  size={24}
-                  color={isLiked ? "red" : "white"}
-                />
-                <Text style={styles.likeText}>{currentLikeCount} Likes</Text>
-              </TouchableOpacity>
-
-              <Ionicons
-                name="chatbubble-outline"
-                size={20}
-                color="white"
-                style={{ marginLeft: 20 }}
               />
-              <Text style={styles.likeCommentText}>{comments.length}</Text>
+            </TouchableOpacity>
+            <View style={{ marginLeft: 10 }}>
+              <Text style={{ color: "white", fontWeight: "bold" }}>
+                {username}
+              </Text>
+              <Text style={{ color: "gray" }}>
+                {new Date(createdAt).toLocaleDateString()}
+              </Text>
             </View>
           </View>
 
-          {/* Scrollable comments section */}
-          <ScrollView
-            style={styles.commentsScrollView}
-            contentContainerStyle={styles.commentsContentContainer}
-            keyboardShouldPersistTaps="handled"
+          <TouchableOpacity
+            onPress={() => setAlbumModalVisible(true)}
+            style={{ marginTop: 20 }}
           >
-            {loadingComments ? (
-              <ActivityIndicator size="small" color="#1DB954" />
-            ) : comments.length > 0 ? (
-              comments.map((comment) => (
-                <TouchableOpacity
-                  key={comment.id}
-                  onLongPress={() => {
-                    if (String(comment.userId) === String(userId)) {
-                      Alert.alert(
-                        "Delete Comment",
-                        "Are you sure you want to delete this comment?",
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Delete",
-                            style: "destructive",
-                            onPress: () => handleDeleteComment(comment.id),
-                          },
-                        ],
-                        { cancelable: true }
-                      );
-                    }
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.commentItem}>
-                    <View style={styles.commentHeader}>
-                      <View style={styles.commentUserInfo}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            router.push({
-                              pathname: "/Screens/Profile/Profile/",
-                              params: { userId: comment.userId },
-                            });
-                          }}
-                        >
-                          <Text style={styles.commentUsername}>
-                            {comment.username}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+            <Image
+              source={{ uri: albumImage }}
+              style={{ width: "100%", height: 300, borderRadius: 10 }}
+            />
+          </TouchableOpacity>
 
-                    <Text style={styles.commentText}>{comment.comment}</Text>
-
-                    <Text style={styles.commentDate}>
-                      {new Date(comment.createdAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <Text style={styles.noCommentsText}>No comments yet.</Text>
-            )}
-          </ScrollView>
-
-          {/* Comment Modal */}
-          <Modal
-            visible={modalVisible}
-            transparent={true}
-            animationType="none"
-            onRequestClose={closeModal}
+          <Text
+            style={{ color: "white", fontSize: 18, fontWeight: "bold", marginTop: 10 }}
           >
-            <TouchableWithoutFeedback onPress={closeModal}>
-              <View style={styles.modalOverlay}>
-                <KeyboardAvoidingView
-                  behavior={Platform.OS === "ios" ? "padding" : "height"}
-                  style={{ flex: 1 }}
-                >
-                  <TouchableWithoutFeedback>
-                    <Animated.View
-                      style={[
-                        styles.modalContentContainer,
-                        {
-                          transform: [{ translateY: slideAnim }],
-                          height: modalHeight,
-                        },
-                      ]}
-                    >
-                      <View style={styles.modalHeader}>
-                        <Pressable
-                          onPress={closeModal}
-                          style={styles.modalCloseButton}
-                        >
-                          <Text style={styles.modalCloseText}>Cancel</Text>
-                        </Pressable>
-                        <Text style={styles.modalTitle}>Add Comment</Text>
-                        <TouchableOpacity
-                          style={styles.modalSubmitButton}
-                          onPress={handleSendComment}
-                          disabled={sending}
-                        >
-                          {sending ? (
-                            <ActivityIndicator color="white" />
-                          ) : (
-                            <Text style={styles.modalSubmitText}>Post</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
+            {albumName}
+          </Text>
+          <Text style={{ color: "gray", marginBottom: 10 }}>
+            {artistName} • {releaseYear}
+          </Text>
 
-                      <View style={styles.inputContainer}>
-                        <TextInput
-                          style={styles.modalInput}
-                          placeholder="Write your comment..."
-                          placeholderTextColor="#888"
-                          multiline
-                          autoFocus
-                          value={newComment}
-                          onChangeText={setNewComment}
-                          maxLength={255}
-                        />
-                        <Text style={styles.characterCount}>
-                          {newComment.length}/255
-                        </Text>
-                      </View>
-                    </Animated.View>
-                  </TouchableWithoutFeedback>
-                </KeyboardAvoidingView>
+          <View style={{ flexDirection: "row", marginBottom: 10 }}>
+            {[...Array(5)].map((_, index) => {
+              const diff = rating - index;
+              let iconName = "star-outline";
+              if (diff >= 0.75) iconName = "star";
+              else if (diff >= 0.25) iconName = "star-half";
+              return (
+                <Ionicons key={index} name={iconName} size={24} color="#FFD700" />
+              );
+            })}
+          </View>
+
+          <Text style={{ color: "white", fontSize: 16 }}>{comment}</Text>
+
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginTop: 16,
+              gap: 20,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="chatbubble-outline" size={20} color="white" />
+              <Text style={{ color: "white", marginLeft: 6 }}>
+                {commentCount}
+              </Text>
+            </View>
+          </View>
+          
+          {/* Comments section */}
+          <View style={{ marginTop: 20 }}>
+            <Text style={{ color: "white", fontWeight: "bold", fontSize: 18, marginBottom: 10 }}>
+              Comments
+            </Text>
+            
+            {comments.length > 0 ? (
+              <View>
+                {comments.map((item, index) => (
+                  <CommentItem key={`comment-${item.id || index}`} item={item} />
+                ))}
+                
+                {hasMoreComments && (
+                  <TouchableOpacity 
+                    onPress={loadMoreComments}
+                    style={{ 
+                      padding: 10, 
+                      alignItems: "center", 
+                      marginTop: 10,
+                      backgroundColor: "#333",
+                      borderRadius: 5,
+                    }}
+                    disabled={loadingComments}
+                  >
+                    {loadingComments ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <Text style={{ color: "white" }}>Load More Comments</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
-            </TouchableWithoutFeedback>
-          </Modal>
-        </ScrollView>
-        <TouchableOpacity
-          style={styles.commentTrigger}
-          onPress={openModal}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.commentTriggerText}>Add a comment...</Text>
-        </TouchableOpacity>
-      </KeyboardAvoidingView>
+            ) : loadingComments ? (
+              <View style={{ alignItems: "center", padding: 20 }}>
+                <ActivityIndicator size="small" color="white" />
+              </View>
+            ) : (
+              <Text style={{ color: "gray", textAlign: "center", padding: 20 }}>
+                No comments yet. Be the first to comment!
+              </Text>
+            )}
+          </View>
+        </View>
+        <View style={{ marginTop: 16 }}>
+  <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <TextInput
+      style={{
+        flex: 1,
+        backgroundColor: "#222",
+        color: "white",
+        borderRadius: 6,
+        padding: 10,
+      }}
+      placeholder="Write a comment..."
+      placeholderTextColor="#999"
+      value={newComment}
+      onChangeText={setNewComment}
+    />
+    <TouchableOpacity
+      onPress={handleAddComment}
+      disabled={sendingComment}
+      style={{
+        marginLeft: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        backgroundColor: sendingComment ? "#666" : "#1DB954",
+        borderRadius: 6,
+      }}
+    >
+      <Text style={{ color: "white", fontWeight: "bold" }}>
+        {sendingComment ? "..." : "Send"}
+      </Text>
+    </TouchableOpacity>
+  </View>
+</View>
+
+      </ScrollView>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "black",
-    paddingHorizontal: 20,
-  },
-  reviewInfoContainer: {
-    paddingVertical: 20,
-    paddingHorizontal: 10,
-    alignItems: "flex-start",
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-  },
-  userInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  profileImageSmall: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginRight: 10,
-  },
-  profileImagePlaceholder: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "gray",
-    marginRight: 10,
-  },
-  userTextContainer: {
-    justifyContent: "center",
-  },
-  username: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "white",
-    textAlign: "left",
-  },
-  date: {
-    fontSize: 12,
-    color: "gray",
-    textAlign: "left",
-  },
-  albumInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-    width: "100%",
-  },
-  albumCover: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    marginRight: 10,
-  },
-  albumCoverPlaceholder: {
-    width: 80,
-    height: 80,
-    backgroundColor: "gray",
-    borderRadius: 10,
-    marginRight: 10,
-  },
-  albumText: {
-    flexShrink: 1,
-    justifyContent: "center",
-  },
-  albumName: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "white",
-    textAlign: "left",
-  },
-  artistName: {
-    fontSize: 14,
-    color: "gray",
-    marginTop: 4,
-    textAlign: "left",
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    marginTop: 10,
-    justifyContent: "flex-start",
-    width: "100%",
-  },
-  reviewText: {
-    fontSize: 16,
-    color: "lightgrey",
-    marginTop: 10,
-    textAlign: "left",
-  },
-  likeContainer: {
-    paddingTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-    justifyContent: "flex-start",
-    width: "100%",
-  },
-  likeText: {
-    fontSize: 16,
-    color: "white",
-    marginLeft: 5,
-  },
-  commentsWrapper: {
-    flex: 1,
-    marginTop: 10,
-  },
-  commentItem: {
-    marginTop: 10,
-    paddingLeft: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-  },
-  commentText: {
-    marginTop: 5,
-    fontSize: 16,
-    color: "lightgrey",
-    textAlign: "left",
-    paddingRight: 10,
-  },
-  commentDate: {
-    fontSize: 12,
-    color: "gray",
-    marginTop: 10,
-    textAlign: "left",
-  },
-  noCommentsText: {
-    fontSize: 16,
-    color: "gray",
-    marginTop: 20,
-    textAlign: "center",
-  },
-  commentTrigger: {
-    padding: 15,
-    backgroundColor: "#222",
-    borderTopWidth: 1,
-    borderTopColor: "#333",
-  },
-  commentTriggerText: {
-    color: "#888",
-    fontSize: 16,
-  },
-  modalOverlay: {
-    paddingTop: 320,
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContentContainer: {
-    backgroundColor: "#1E1E1E",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    width: "100%",
-  },
-
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalInput: {
-    backgroundColor: "#333",
-    color: "white",
-    borderRadius: 10,
-    padding: 15,
-    textAlignVertical: "top",
-    fontSize: 16,
-    flex: 1,
-  },
-  modalCloseButton: {
-    padding: 10,
-  },
-  modalCloseText: {
-    color: "white",
-    fontSize: 16,
-  },
-  modalTitle: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  modalSubmitButton: {
-    backgroundColor: "#1DB954",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-  },
-  modalSubmitText: {
-    color: "white",
-    fontWeight: "bold",
-  },
-  inputContainer: {
-    flex: 1,
-    justifyContent: "flex-start",
-  },
-  albumAndCommentContainer: {
-    flexDirection: "column",
-    alignItems: "center",
-    marginTop: 15,
-    marginLeft: 0,
-    width: "100%",
-  },
-
-  albumCommentTexts: {
-    marginLeft: 12,
-    flexShrink: 1,
-  },
-
-  artistYear: {
-    fontSize: 14,
-    color: "gray",
-    marginTop: 2,
-  },
-  likeAndCommentContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 20,
-  },
-
-  iconTextPair: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 20, // Like ve comment arasına boşluk
-  },
-
-  likeCommentText: {
-    color: "white",
-    fontSize: 16,
-    marginLeft: 5,
-  },
-  commentUsername: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  deleteIconButton: {
-    padding: 5,
-  },
-  commentHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  characterCount: {
-    alignSelf: "flex-end",
-    color: "gray",
-    fontSize: 12,
-    marginTop: 5,
-    marginRight: 5,
-  },
-  commentUserInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  commentProfileImage: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  commentProfileImagePlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "gray",
-    marginRight: 8,
-  },
-  headerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-  },
-  backButton: {
-    paddingRight: 5,
-  },
-  imageModalBackground: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.9)",
-  },
-  imageModalContent: {
-    alignItems: "center",
-  },
-  imageModalImage: {
-    width: 300,
-    height: 300,
-    borderRadius: 10,
-  },
-  imageModalText: {
-    fontSize: 24,
-    color: "white",
-    marginTop: 20,
-  },
-  imageModalTextSmall: {
-    fontSize: 16,
-    color: "gray",
-    marginTop: 4,
-  },
-  spotifyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1DB954",
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 20,
-    width: 200,
-  },
-  spotifyButtonText: {
-    color: "white",
-    fontSize: 16,
-    marginLeft: 10,
-  },
-  albumTopSection: {
-    flexDirection: "row",
-    marginBottom: 10,
-  },
-  albumInfoTexts: {
-    flex: 1,
-    marginLeft: 10,
-    justifyContent: "center",
-  },
-
-  reviewCommentSection: {
-    paddingHorizontal: 5,
-    backgroundColor: "transparent",
-    borderRadius: 0,
-    width: "100%",
-  },
-});
 
 export default ReviewDetail;

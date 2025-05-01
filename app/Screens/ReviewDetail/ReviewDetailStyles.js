@@ -1,0 +1,48 @@
+import { StyleSheet } from "react-native";
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "black", paddingHorizontal: 20 },
+  reviewInfoContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+    alignItems: "flex-start",
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  userInfo: { flexDirection: "row", alignItems: "center" },
+  profileImageSmall: { width: 30, height: 30, borderRadius: 15, marginRight: 10 },
+  profileImagePlaceholder: { width: 30, height: 30, borderRadius: 15, backgroundColor: "gray", marginRight: 10 },
+  userTextContainer: { justifyContent: "center" },
+  username: { fontSize: 16, fontWeight: "bold", color: "white" },
+  date: { fontSize: 12, color: "gray" },
+  albumCover: { width: 100, height: 100, borderRadius: 10 },
+  albumTopSection: { flexDirection: "row", marginBottom: 10 },
+  albumInfoTexts: { flex: 1, marginLeft: 10, justifyContent: "center" },
+  albumName: { fontSize: 18, fontWeight: "bold", color: "white" },
+  artistYear: { fontSize: 14, color: "gray", marginTop: 4 },
+  ratingContainer: { flexDirection: "row", marginTop: 10 },
+  reviewCommentSection: { paddingHorizontal: 5, width: "100%" },
+  reviewText: { fontSize: 16, color: "lightgrey", marginTop: 10 },
+  likeContainer: { paddingTop: 10, flexDirection: "row", marginTop: 10 },
+  likeText: { fontSize: 16, color: "white", marginLeft: 5 },
+  backButton: { paddingRight: 5 },
+  imageModalBackground: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.9)" },
+  imageModalContent: { alignItems: "center" },
+  imageModalImage: { width: 300, height: 300, borderRadius: 10 },
+  imageModalText: { fontSize: 24, color: "white", marginTop: 20 },
+  imageModalTextSmall: { fontSize: 16, color: "gray", marginTop: 4 },
+  spotifyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1DB954",
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 20,
+    width: 200,
+  },
+  spotifyButtonText: { color: "white", fontSize: 16, marginLeft: 10 },
+  albumAndCommentContainer: { flexDirection: "column", alignItems: "center", marginTop: 15, width: "100%" },
+});
+
+export default styles;
