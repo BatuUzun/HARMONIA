@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Linking,
+  ScrollView,
 } from "react-native";
 import { Audio } from "expo-av";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
@@ -23,6 +24,7 @@ import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { Modal, Platform } from "react-native";
 import { WebView } from "react-native-webview";
+import { KeyboardAvoidingView } from "react-native";
 
 export default function ChatDetailScreen() {
   const {
@@ -460,205 +462,210 @@ export default function ChatDetailScreen() {
   };
   
   return (
-    <View style={styles.container}>
-      <TouchableOpacity
-        onPress={() => router.replace("/Screens/Chat", { userId: userIdRef.current })}
-        style={{ marginBottom: 10 }}
-      >
-        <Text style={{ color: "white", fontSize: 22 }}>← Back</Text>
-      </TouchableOpacity>
-
-      <View style={styles.header}>
-        {opponentImageBase64 && (
-          <Image source={{ uri: opponentImageBase64 }} style={styles.profileImage} />
-        )}
-        <Text style={styles.opponentUsername}>{opponentUsername}</Text>
-      </View>
-
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderMessage}
-        contentContainerStyle={styles.messageList}
-        inverted
-        onEndReachedThreshold={0.1}
-        onEndReached={() => {
-          if (initialLoadDone && hasMoreRef.current && !loading) {
-            fetchMessages(cursor);
-          }
-        }}
-        ListFooterComponent={loading ? <ActivityIndicator size="small" color="#fff" /> : null}
-      />
-
-      <View style={{
-        flexDirection: "row",
-        alignItems: "center",
-        padding: 10,
-        backgroundColor: "#1a1a1a",
-      }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+    >
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
         <TouchableOpacity
-          onPress={() => setShowSongSearch(true)}
-          style={{ marginRight: 10 }}
+          onPress={() => router.replace("/Screens/Chat", { userId: userIdRef.current })}
+          style={{ marginBottom: 10 }}
         >
-          <Ionicons name="add" size={28} color="#00acee" />
+          <Text style={{ color: "white", fontSize: 22 }}>← Back</Text>
         </TouchableOpacity>
-
-        <TextInput
-          style={{
-            flex: 1,
-            height: 40,
-            borderColor: "#444",
-            borderWidth: 1,
-            borderRadius: 8,
-            paddingHorizontal: 10,
-            backgroundColor: "#fff",
-            color: "#000",
+  
+        <View style={styles.header}>
+          {opponentImageBase64 && (
+            <Image source={{ uri: opponentImageBase64 }} style={styles.profileImage} />
+          )}
+          <Text style={styles.opponentUsername}>{opponentUsername}</Text>
+        </View>
+  
+        <FlatList
+          data={messages}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.messageList}
+          inverted
+          keyboardShouldPersistTaps="handled"
+          onEndReachedThreshold={0.1}
+          onEndReached={() => {
+            if (initialLoadDone && hasMoreRef.current && !loading) {
+              fetchMessages(cursor);
+            }
           }}
-          placeholder="Type a message..."
-          placeholderTextColor="#888"
-          value={typedMessage}
-          onChangeText={setTypedMessage}
+          ListFooterComponent={loading ? <ActivityIndicator size="small" color="#fff" /> : null}
         />
-        <TouchableOpacity
-          disabled={typedMessage.trim() === ""}
-          onPress={handleSendMessage}
+  
+        <View
           style={{
-            marginLeft: 10,
-            opacity: typedMessage.trim() === "" ? 0.3 : 1,
+            flexDirection: "row",
+            alignItems: "center",
+            padding: 10,
+            backgroundColor: "#1a1a1a",
           }}
         >
-          <Ionicons name="send" size={24} color="#00acee" />
-        </TouchableOpacity>
-
-
-      </View>
-
-      {showSongSearch && (
-        <View style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.9)",
-          padding: 20,
-        }}>
+          <TouchableOpacity
+            onPress={() => setShowSongSearch(true)}
+            style={{ marginRight: 10 }}
+          >
+            <Ionicons name="add" size={28} color="#00acee" />
+          </TouchableOpacity>
+  
           <TextInput
             style={{
+              flex: 1,
               height: 40,
-              borderColor: "#ccc",
+              borderColor: "#444",
               borderWidth: 1,
               borderRadius: 8,
-              marginBottom: 20,
               paddingHorizontal: 10,
               backgroundColor: "#fff",
               color: "#000",
             }}
-            placeholder="Search for a song..."
+            placeholder="Type a message..."
             placeholderTextColor="#888"
-            value={songQuery}
-            onChangeText={async (text) => {
-              setSongQuery(text);
-          
-              const trimmed = text.trim();
-              searchCounter.current += 1; // 🧠 Update counter for every change
-              const currentSearch = searchCounter.current;
-          
-              if (trimmed.length === 0) {
-                setSongResults([]); // Clear immediately
-              } else {
-                try {
-                  const token = await getAccessToken();
-                  const results = await searchTracks(token, trimmed);
-          
-                  // 🔥 Only update results if it's the latest search
-                  if (currentSearch === searchCounter.current) {
-                    setSongResults(results);
-                  } else {
-                    console.log("⏩ Ignored outdated search result for:", trimmed);
-                  }
-                } catch (err) {
-                  console.error("Error searching songs:", err);
-                  if (currentSearch === searchCounter.current) {
-                    setSongResults([]); // only clear if this is the latest search
-                  }
-                }
-              }
-            }}
-            
+            value={typedMessage}
+            onChangeText={setTypedMessage}
           />
-
-          <FlatList
-            data={songResults}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => handleSelectSong(item)}
-                style={{
-                  padding: 10,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#555",
-                }}
-              >
-                <Text style={{ color: "white" }}>{item.name} - {item.artists[0]?.name}</Text>
-              </TouchableOpacity>
-            )}
-          />
-
           <TouchableOpacity
-            onPress={() => setShowSongSearch(false)}
+            disabled={typedMessage.trim() === ""}
+            onPress={handleSendMessage}
             style={{
-              marginTop: 20,
-              alignSelf: "center",
+              marginLeft: 10,
+              opacity: typedMessage.trim() === "" ? 0.3 : 1,
             }}
           >
-            <Text style={{ color: "#00acee", fontSize: 18 }}>Close</Text>
+            <Ionicons name="send" size={24} color="#00acee" />
           </TouchableOpacity>
         </View>
-      )}
-      <Modal
-  visible={webViewVisible}
-  animationType="slide"
-  onRequestClose={() => setWebViewVisible(false)}
-  transparent={false}
->
-  <View style={{ flex: 1, backgroundColor: "#000" }}>
-    {webViewUrl && (
-      <WebView
-        source={{
-          html: `
-            <html>
-              <body style="background-color: black; display: flex; justify-content: center; align-items: center; height: 100%;">
-                <audio controls autoplay style="width: 90%;">
-                  <source src="${webViewUrl}" type="audio/mpeg">
-                  Your browser does not support the audio element.
-                </audio>
-              </body>
-            </html>
-          `,
-        }}
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-      />
-    )}
-
-    <TouchableOpacity
-      onPress={() => setWebViewVisible(false)}
-      style={{
-        position: "absolute",
-        top: 40,
-        right: 20,
-        backgroundColor: "#00acee",
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-      }}
-    >
-      <Text style={{ color: "#fff", fontWeight: "bold" }}>Close</Text>
-    </TouchableOpacity>
-  </View>
-</Modal>
-
-    </View>
+  
+        {showSongSearch && (
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.9)",
+              padding: 20,
+            }}
+          >
+            <TextInput
+              style={{
+                height: 40,
+                borderColor: "#ccc",
+                borderWidth: 1,
+                borderRadius: 8,
+                marginBottom: 20,
+                paddingHorizontal: 10,
+                backgroundColor: "#fff",
+                color: "#000",
+              }}
+              placeholder="Search for a song..."
+              placeholderTextColor="#888"
+              value={songQuery}
+              onChangeText={async (text) => {
+                setSongQuery(text);
+                const trimmed = text.trim();
+                searchCounter.current += 1;
+                const currentSearch = searchCounter.current;
+  
+                if (trimmed.length === 0) {
+                  setSongResults([]);
+                } else {
+                  try {
+                    const token = await getAccessToken();
+                    const results = await searchTracks(token, trimmed);
+                    if (currentSearch === searchCounter.current) {
+                      setSongResults(results);
+                    }
+                  } catch (err) {
+                    console.error("Error searching songs:", err);
+                    if (currentSearch === searchCounter.current) {
+                      setSongResults([]);
+                    }
+                  }
+                }
+              }}
+            />
+  
+            <FlatList
+              data={songResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => handleSelectSong(item)}
+                  style={{
+                    padding: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#555",
+                  }}
+                >
+                  <Text style={{ color: "white" }}>
+                    {item.name} - {item.artists[0]?.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+  
+            <TouchableOpacity
+              onPress={() => setShowSongSearch(false)}
+              style={{
+                marginTop: 20,
+                alignSelf: "center",
+              }}
+            >
+              <Text style={{ color: "#00acee", fontSize: 18 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+  
+        <Modal
+          visible={webViewVisible}
+          animationType="slide"
+          onRequestClose={() => setWebViewVisible(false)}
+          transparent={false}
+        >
+          <View style={{ flex: 1, backgroundColor: "#000" }}>
+            {webViewUrl && (
+              <WebView
+                source={{
+                  html: `
+                    <html>
+                      <body style="background-color: black; display: flex; justify-content: center; align-items: center; height: 100%;">
+                        <audio controls autoplay style="width: 90%;">
+                          <source src="${webViewUrl}" type="audio/mpeg">
+                          Your browser does not support the audio element.
+                        </audio>
+                      </body>
+                    </html>
+                  `,
+                }}
+                allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={false}
+              />
+            )}
+  
+            <TouchableOpacity
+              onPress={() => setWebViewVisible(false)}
+              style={{
+                position: "absolute",
+                top: 40,
+                right: 20,
+                backgroundColor: "#00acee",
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
