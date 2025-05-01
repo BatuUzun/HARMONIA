@@ -33,7 +33,6 @@ import { Keyboard } from "react-native";
 import { AuthContext } from "../../../context/AuthContext";
 import { TouchableWithoutFeedback } from "react-native";
 import { useNavigation, useFocusEffect  } from "@react-navigation/native";
-import { Menu , Portal  } from "react-native-paper";
 import {
   CLIENT_ID,
   CLIENT_SECRET,
@@ -1215,70 +1214,7 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {isOwner && (
-              <Menu
-                visible={menuVisible}
-                onDismiss={() => setMenuVisible(false)}
-                anchor={
-                  <TouchableOpacity
-                    onPress={() => {
-                      console.log("3 noktaya tıklandı 🚀"); // EKLENDİ
-                      setMenuVisible(true);
-                    }}
-                  >
-                    <Ionicons
-                      name="ellipsis-horizontal"
-                      size={24}
-                      color="white"
-                      style={{ marginTop: -20 }}
-                    />
-                  </TouchableOpacity>
-
-                }
-              >
-                <Portal>
-                <Menu.Item
-                  onPress={() => {
-                    setSelectedReviewId(review.id);
-                    setModalVisible(true);
-                    setMenuVisible(false);
-                  }}
-                  title="Delete"
-                  leadingIcon="delete"
-                />
-                <Menu.Item
-                  onPress={() => {
-                    setMenuVisible(false);
-                    const details = albumDetails[review.spotifyId];
-                    const album = {
-                      id: review.spotifyId,
-                      name: details?.albumName || "Unknown Album",
-                      images: [{ url: albumImages[review.spotifyId] || "" }],
-                      release_date:
-                        review.releaseDate ||
-                        `${details?.releaseYear || 2023}-01-01`,
-                      artists: [
-                        {
-                          name: details?.artistName || "Unknown Artist",
-                        },
-                      ],
-                    };
-
-                    router.push({
-                      pathname: "Screens/Review/Entry",
-                      params: {
-                        selectedAlbum: JSON.stringify(album),
-                        reviewToUpdate: JSON.stringify(review),
-                        isUpdateFlow: true,
-                      },
-                    });
-                  }}
-                  title="Update"
-                  leadingIcon="pencil"
-                />
-                </Portal>
-              </Menu>
-            )}
+            
           </View>
 
           <View style={styles.divider} />
