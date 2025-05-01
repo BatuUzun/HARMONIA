@@ -19,13 +19,10 @@ import {
 import { getAccessToken, searchTracks } from "../../api/spotify";
 import styles from "./ChatDetailScreenStyles";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { Client } from "@stomp/stompjs";
-import SockJS from "sockjs-client";
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 import { Modal, Platform } from "react-native";
 import { WebView } from "react-native-webview";
-import {
-  socketUrl,
-} from "../../constants/apiConstants";
 
 export default function ChatDetailScreen() {
   const {
@@ -46,7 +43,7 @@ export default function ChatDetailScreen() {
   const searchCounter = useRef(0); // 🔥 Add a counter to track latest search
   const [webViewVisible, setWebViewVisible] = useState(false);
   const [webViewUrl, setWebViewUrl] = useState(null);
-
+  
   const [messages, setMessages] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [hasMore, setHasMore] = useState(true);
@@ -58,6 +55,8 @@ export default function ChatDetailScreen() {
   const [songQuery, setSongQuery] = useState("");
   const [songResults, setSongResults] = useState([]);
   const [sound, setSound] = useState(null);
+
+  const socketUrl = "http://192.168.1.105:8765/ws-chat";
 
   const extractSpotifyTrackId = (url) => {
     const match = url.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
@@ -93,7 +92,7 @@ export default function ChatDetailScreen() {
       playThroughEarpieceAndroid: false,
     });
   }, []);
-
+  
   const fetchTrackInfo = async (url) => {
     const trackId = extractSpotifyTrackId(url);
     if (!trackId) {
@@ -103,33 +102,23 @@ export default function ChatDetailScreen() {
 
     try {
       const token = await getAccessToken();
-      const response = await fetch(
-        `https://api.spotify.com/v1/tracks/${trackId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (!response.ok) {
-        console.log(
-          `❌ Failed to fetch Spotify track info. Status: ${response.status}`
-        );
+        console.log(`❌ Failed to fetch Spotify track info. Status: ${response.status}`);
         return null;
       }
 
       const data = await response.json();
-      console.log("🎵 Spotify track fetched:", {
-        name: data.name,
-        previewUrl: data.preview_url,
-      });
+      console.log("🎵 Spotify track fetched:", { name: data.name, previewUrl: data.preview_url });
 
       let previewUrl = data.preview_url;
       if (!previewUrl) {
         console.log("⚠️ No Spotify preview, trying Deezer...");
-        previewUrl = await fetchPreviewFromDeezer(
-          data.name,
-          data.artists?.[0]?.name || ""
-        );
+        previewUrl = await fetchPreviewFromDeezer(data.name, data.artists?.[0]?.name || "");
+        
       }
 
       return {
@@ -166,20 +155,20 @@ export default function ChatDetailScreen() {
         setWebViewVisible(true);
         return;
       }
-
+  
       if (sound) {
         await sound.unloadAsync();
         setSound(null);
       }
-
+  
       if (url === playingUrl) {
         setPlayingUrl(null);
         return;
       }
-
+  
       const { sound: newSound } = await Audio.Sound.createAsync({ uri: url });
       setSound(newSound);
-
+  
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.didJustFinish) {
           console.log("✅ Preview finished!");
@@ -187,15 +176,19 @@ export default function ChatDetailScreen() {
           newSound.unloadAsync();
         }
       });
-
+  
       await newSound.playAsync();
       console.log("Preview URL to play:", url);
-
+  
       setPlayingUrl(url);
     } catch (err) {
       console.log("Audio play error", err);
     }
   };
+  
+  
+  
+  
 
   // 🛑 Stop music when unmounting the screen
   useEffect(() => {
@@ -285,10 +278,7 @@ export default function ChatDetailScreen() {
     setLoading(true);
 
     try {
-      const data = await getMessagesByConversationId(
-        conversationId,
-        cursorValue
-      );
+      const data = await getMessagesByConversationId(conversationId, cursorValue);
       const enriched = await enrichMessagesWithTrackInfo(data);
 
       if (cursorValue === null) {
@@ -353,23 +343,22 @@ export default function ChatDetailScreen() {
 
   const handleSendMessage = () => {
     if (typedMessage.trim() === "") return;
-
+  
     const messagePayload = {
       senderId: parseInt(userIdRef.current),
       receiverId: parseInt(opponentId),
-      conversationId: conversationIdRef.current
-        ? parseInt(conversationIdRef.current)
-        : null,
+      conversationId: conversationIdRef.current ? parseInt(conversationIdRef.current) : null,
       content: typedMessage.trim(),
     };
-
+  
     stompClientRef.current.publish({
       destination: "/app/chat.send",
       body: JSON.stringify(messagePayload),
     });
-
+  
     setTypedMessage("");
   };
+  
 
   const handleSearchSongs = async (query) => {
     if (!query) {
@@ -385,6 +374,7 @@ export default function ChatDetailScreen() {
       setSongResults([]); // 🔥 In case of error, clear results too
     }
   };
+  
 
   const handleSelectSong = (song) => {
     const spotifyUrl = song.external_urls?.spotify;
@@ -406,6 +396,7 @@ export default function ChatDetailScreen() {
   
     setShowSongSearch(false); // ✅ Close the search view
   };
+  
 
   const renderMessage = ({ item }) => {
     const isMine = String(item.senderId) === String(userIdRef.current);
@@ -426,33 +417,15 @@ export default function ChatDetailScreen() {
     return (
       <TouchableOpacity onLongPress={handleLongPress}>
         <View style={isMine ? styles.messageRowRight : styles.messageRowLeft}>
-          <View
-            style={[
-              styles.messageContainer,
-              isMine ? styles.myMessage : styles.theirMessage,
-            ]}
-          >
+          <View style={[styles.messageContainer, isMine ? styles.myMessage : styles.theirMessage]}>
             {item.trackInfo ? (
               <View style={{ alignItems: "center" }}>
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(item.trackInfo.externalUrl)}
-                >
+                <TouchableOpacity onPress={() => Linking.openURL(item.trackInfo.externalUrl)}>
                   <Image
                     source={{ uri: item.trackInfo.image }}
-                    style={{
-                      width: 150,
-                      height: 150,
-                      borderRadius: 8,
-                      marginBottom: 5,
-                    }}
+                    style={{ width: 150, height: 150, borderRadius: 8, marginBottom: 5 }}
                   />
-                  <Text
-                    style={{
-                      color: "white",
-                      fontWeight: "bold",
-                      textAlign: "center",
-                    }}
-                  >
+                  <Text style={{ color: "white", fontWeight: "bold", textAlign: "center" }}>
                     {item.trackInfo.name}
                   </Text>
                 </TouchableOpacity>
@@ -468,17 +441,8 @@ export default function ChatDetailScreen() {
                       borderRadius: 8,
                     }}
                   >
-                    <Text
-                      style={{
-                        color: "white",
-                        fontWeight: "bold",
-                        fontSize: 16,
-                      }}
-                    >
-                      {playingUrl === item.trackInfo.previewUrl
-                        ? "⏹️ Stop Preview"
-                        : "▶️ Play Preview"}{" "}
-                      {/* 🔥 Text depends on THIS track */}
+                    <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>
+                    {playingUrl === item.trackInfo.previewUrl ? "⏹️ Stop Preview" : "▶️ Play Preview"} {/* 🔥 Text depends on THIS track */}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -494,13 +458,11 @@ export default function ChatDetailScreen() {
       </TouchableOpacity>
     );
   };
-
+  
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        onPress={() =>
-          router.replace("/Screens/Chat", { userId: userIdRef.current })
-        }
+        onPress={() => router.replace("/Screens/Chat", { userId: userIdRef.current })}
         style={{ marginBottom: 10 }}
       >
         <Text style={{ color: "white", fontSize: 22 }}>← Back</Text>
@@ -508,10 +470,7 @@ export default function ChatDetailScreen() {
 
       <View style={styles.header}>
         {opponentImageBase64 && (
-          <Image
-            source={{ uri: opponentImageBase64 }}
-            style={styles.profileImage}
-          />
+          <Image source={{ uri: opponentImageBase64 }} style={styles.profileImage} />
         )}
         <Text style={styles.opponentUsername}>{opponentUsername}</Text>
       </View>
@@ -528,19 +487,15 @@ export default function ChatDetailScreen() {
             fetchMessages(cursor);
           }
         }}
-        ListFooterComponent={
-          loading ? <ActivityIndicator size="small" color="#fff" /> : null
-        }
+        ListFooterComponent={loading ? <ActivityIndicator size="small" color="#fff" /> : null}
       />
 
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          padding: 10,
-          backgroundColor: "#1a1a1a",
-        }}
-      >
+      <View style={{
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 10,
+        backgroundColor: "#1a1a1a",
+      }}>
         <TouchableOpacity
           onPress={() => setShowSongSearch(true)}
           style={{ marginRight: 10 }}
@@ -574,20 +529,20 @@ export default function ChatDetailScreen() {
         >
           <Ionicons name="send" size={24} color="#00acee" />
         </TouchableOpacity>
+
+
       </View>
 
       {showSongSearch && (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.9)",
-            padding: 20,
-          }}
-        >
+        <View style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.9)",
+          padding: 20,
+        }}>
           <TextInput
             style={{
               height: 40,
@@ -604,26 +559,23 @@ export default function ChatDetailScreen() {
             value={songQuery}
             onChangeText={async (text) => {
               setSongQuery(text);
-
+          
               const trimmed = text.trim();
               searchCounter.current += 1; // 🧠 Update counter for every change
               const currentSearch = searchCounter.current;
-
+          
               if (trimmed.length === 0) {
                 setSongResults([]); // Clear immediately
               } else {
                 try {
                   const token = await getAccessToken();
                   const results = await searchTracks(token, trimmed);
-
+          
                   // 🔥 Only update results if it's the latest search
                   if (currentSearch === searchCounter.current) {
                     setSongResults(results);
                   } else {
-                    console.log(
-                      "⏩ Ignored outdated search result for:",
-                      trimmed
-                    );
+                    console.log("⏩ Ignored outdated search result for:", trimmed);
                   }
                 } catch (err) {
                   console.error("Error searching songs:", err);
@@ -633,6 +585,7 @@ export default function ChatDetailScreen() {
                 }
               }
             }}
+            
           />
 
           <FlatList
@@ -647,9 +600,7 @@ export default function ChatDetailScreen() {
                   borderBottomColor: "#555",
                 }}
               >
-                <Text style={{ color: "white" }}>
-                  {item.name} - {item.artists[0]?.name}
-                </Text>
+                <Text style={{ color: "white" }}>{item.name} - {item.artists[0]?.name}</Text>
               </TouchableOpacity>
             )}
           />
@@ -666,16 +617,16 @@ export default function ChatDetailScreen() {
         </View>
       )}
       <Modal
-        visible={webViewVisible}
-        animationType="slide"
-        onRequestClose={() => setWebViewVisible(false)}
-        transparent={false}
-      >
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
-          {webViewUrl && (
-            <WebView
-              source={{
-                html: `
+  visible={webViewVisible}
+  animationType="slide"
+  onRequestClose={() => setWebViewVisible(false)}
+  transparent={false}
+>
+  <View style={{ flex: 1, backgroundColor: "#000" }}>
+    {webViewUrl && (
+      <WebView
+        source={{
+          html: `
             <html>
               <body style="background-color: black; display: flex; justify-content: center; align-items: center; height: 100%;">
                 <audio controls autoplay style="width: 90%;">
@@ -685,28 +636,29 @@ export default function ChatDetailScreen() {
               </body>
             </html>
           `,
-              }}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false}
-            />
-          )}
+        }}
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+      />
+    )}
 
-          <TouchableOpacity
-            onPress={() => setWebViewVisible(false)}
-            style={{
-              position: "absolute",
-              top: 40,
-              right: 20,
-              backgroundColor: "#00acee",
-              paddingVertical: 10,
-              paddingHorizontal: 20,
-              borderRadius: 8,
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "bold" }}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
+    <TouchableOpacity
+      onPress={() => setWebViewVisible(false)}
+      style={{
+        position: "absolute",
+        top: 40,
+        right: 20,
+        backgroundColor: "#00acee",
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+      }}
+    >
+      <Text style={{ color: "#fff", fontWeight: "bold" }}>Close</Text>
+    </TouchableOpacity>
+  </View>
+</Modal>
+
     </View>
   );
 }
