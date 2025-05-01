@@ -207,6 +207,43 @@ export default function AuthenticationSettings() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your profile?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Yes",
+          onPress: async () => {
+            try {
+              const response = await fetch(
+                `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/profile-api/delete-profile/${userId}`,
+                { method: "DELETE" }
+              );
+  
+              if (response.ok) {
+                Alert.alert("Deleted", "Your profile has been deleted.");
+                logout(); // auth context'ten çıkış
+                router.replace("/Screens/Auth/SignUp"); // signup ekranına yönlendirme
+              } else {
+                Alert.alert("Error", "Failed to delete your account.");
+              }
+            } catch (err) {
+              console.error("Delete error", err);
+              Alert.alert("Error", "An error occurred while deleting the account.");
+            }
+          },
+        },
+      ],
+      { cancelable: false }
+    );
+  };
+  
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -323,6 +360,14 @@ export default function AuthenticationSettings() {
             >
               <Text style={styles.logoutButtonText}>Log Out</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={handleDeleteAccount}
+            >
+              <Text style={styles.deleteButtonText}>Delete My Account</Text>
+            </TouchableOpacity>
+
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -376,7 +421,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1DB954",
     padding: 15,
     marginTop: 10,
-    marginBottom: 20,
+    marginBottom: 10,
     borderRadius: 8,
   },
   saveButtonText: {
@@ -405,7 +450,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF3B30",
     padding: 15,
     borderRadius: 8,
-    marginTop: 10,
+    marginTop: 1,
   },
   logoutButtonText: {
     color: "white",
@@ -453,4 +498,16 @@ const styles = StyleSheet.create({
     borderRightColor: "transparent",
     borderColor: "#14853c",
   },
+  deleteButton: {
+    backgroundColor: "#8B0000",
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  deleteButtonText: {
+    color: "white",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  
 });
