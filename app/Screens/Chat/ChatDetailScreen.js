@@ -389,11 +389,22 @@ export default function ChatDetailScreen() {
   const handleSelectSong = (song) => {
     const spotifyUrl = song.external_urls?.spotify;
     if (spotifyUrl) {
-      setTypedMessage(spotifyUrl);
-    } else {
-      setTypedMessage(`${song.name} - ${song.artists[0]?.name}`);
+      const messagePayload = {
+        senderId: parseInt(userIdRef.current),
+        receiverId: parseInt(opponentId),
+        conversationId: conversationIdRef.current
+          ? parseInt(conversationIdRef.current)
+          : null,
+        content: spotifyUrl,
+      };
+  
+      stompClientRef.current.publish({
+        destination: "/app/chat.send",
+        body: JSON.stringify(messagePayload),
+      });
     }
-    setShowSongSearch(false);
+  
+    setShowSongSearch(false); // ✅ Close the search view
   };
 
   const renderMessage = ({ item }) => {

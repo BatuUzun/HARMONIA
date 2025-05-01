@@ -348,9 +348,10 @@ export default function ActivityScreen() {
         ))}
       </View>
 
-      {!isDataFetched || !isAlbumDataFetched ? (
-        <ActivityIndicator color="#fff" style={{ marginTop: 20 }} />
-      ) : followedUserIds.length === 0 ? (
+      {(!isDataFetched || !isAlbumDataFetched) && loadingMore ? (
+  <ActivityIndicator color="#fff" style={{ marginTop: 20 }} />
+) : followedUserIds.length === 0 ? (
+
         <Text style={styles.text}>You’re not following anyone yet.</Text>
       ) : selectedTab === "Reviews" && reviewActivities.length === 0 ? (
         <Text style={styles.text}>

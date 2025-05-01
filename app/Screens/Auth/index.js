@@ -35,12 +35,12 @@ export default function Login() {
       Alert.alert("Error", "Please enter a valid email address.");
       return;
     }
-
+  
     if (password.length === 0) {
       Alert.alert("Error", "Please enter your password.");
       return;
     }
-
+  
     try {
       const response = await fetch(
         `${BACKEND_CREDENTIALS_URL}/credentials/check-login-credentials`,
@@ -56,16 +56,16 @@ export default function Login() {
           }),
         }
       );
-
+  
       const result = await response.json();
+  
       if (response.ok) {
         if (IS_DEVELOPMENT) {
           console.log("Login successful:", result);
         }
-        
-        // Always check the verification status from the backend response
+  
         if (result.isVerified === false) {
-          // Only show verification screen if user is not verified
+          // Redirect to verification screen if user is not verified
           router.replace({
             pathname: "/Screens/Auth/VerificationSettings",
             params: { email, password },
@@ -76,11 +76,11 @@ export default function Login() {
           router.replace("Screens/Home/Feed");
         }
       } else {
+        // Handle error response from backend
         if (IS_DEVELOPMENT) {
-          const error = await response.text();
-          console.error("Login error:", error);
+          console.error("Login error:", result);
         }
-        Alert.alert("Error", error || "Invalid credentials. Try again.");
+        Alert.alert("Error", result.error || "Invalid credentials. Try again.");
       }
     } catch (error) {
       if (IS_DEVELOPMENT) {
@@ -89,6 +89,7 @@ export default function Login() {
       Alert.alert("Error", "Something went wrong. Please try again.");
     }
   };
+  
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>

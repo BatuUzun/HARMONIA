@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext,   useCallback, } from "react";
 import {
   View,
   Text,
   Image,
   StyleSheet,
+
   TouchableOpacity,
   FlatList,
   Modal,
@@ -11,6 +12,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -30,7 +32,8 @@ import FontAwesome from "react-native-vector-icons/FontAwesome";
 import { Keyboard } from "react-native";
 import { AuthContext } from "../../../context/AuthContext";
 import { TouchableWithoutFeedback } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect  } from "@react-navigation/native";
+import { Menu , Portal  } from "react-native-paper";
 import {
   CLIENT_ID,
   CLIENT_SECRET,
@@ -50,6 +53,15 @@ export default function ProfileScreen() {
   const [currentUserId, setCurrentUserId] = useState(null);
   const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
   const navigation = useNavigation();
+  const [profileLoading, setProfileLoading] = useState(false);
+
+
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("📌 ProfileScreen focus oldu, veriler tazeleniyor...");
+      fetchProfileAndFavorites(); 
+    }, [currentUserId])
+  );
 
   useEffect(() => {
     if (userId) {
@@ -101,10 +113,121 @@ export default function ProfileScreen() {
   const [nextFollowingCursor, setNextFollowingCursor] = useState(null);
   const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
   const [isLoadingFollowing, setIsLoadingFollowing] = useState(false);
+  const [likeCounts, setLikeCounts] = useState({});
+  const [selectedAlbumInfo, setSelectedAlbumInfo] = useState(null);
+  const [userProfiles, setUserProfiles] = useState({});
+  const [albumDetails, setAlbumDetails] = useState({});
+
 
   const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ALBUM_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ARTIST_API_URL = "https://api.spotify.com/v1/artists";
+
+  const getProfileImageUrl = (fileName) => {
+    if (!fileName || fileName === "default.png") {
+      return Image.resolveAssetSource(defaultProfileImage).uri;
+    }
+    return `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${fileName}`;
+  };
+
+  const fetchInitialData = async () => {
+    setLoading(true);
+    setUserProfiles({});
+    await fetchPopularReviewIds();
+    await fetchFollowedReviews();
+    await fetchYourReviews();
+    setLoading(false);
+  };
+
+    useEffect(() => {
+      if (refreshing) {
+        fetchInitialData().then(() => setRefreshing(false));
+      }
+    }, [refreshing]);
+
+    useEffect(() => {
+      if (accessToken) {
+        fetchInitialData().then(() => {
+          fetchAlbumDetailsForAllReviews();
+        });
+      }
+    }, [accessToken]);
+
+      useFocusEffect(
+        useCallback(() => {
+          if (accessToken) {
+            fetchInitialData();
+          }
+        }, [accessToken])
+      );
+
+    const fetchAlbumDetailsForAllReviews = async () => {
+      if (!accessToken) return;
+
+      const allReviews = [...popularReviews, ...followedReviews, ...yourReviews];
+
+      // Aynı albüm id'sine sahip reviewlar olabilir, tekrar fetch etmeyelim
+      const uniqueSpotifyIds = [...new Set(allReviews.map((r) => r.spotifyId))];
+
+      for (const spotifyId of uniqueSpotifyIds) {
+        try {
+          const response = await fetch(
+            `https://api.spotify.com/v1/albums/${spotifyId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          );
+          const data = await response.json();
+          const albumName = data.name;
+          const artistName = data.artists?.[0]?.name || "Unknown Artist";
+          const releaseYear = new Date(data.release_date).getFullYear();
+
+          setAlbumDetails((prev) => ({
+            ...prev,
+            [spotifyId]: {
+              albumName,
+              artistName,
+              releaseYear,
+            },
+          }));
+        } catch (error) {
+          console.error(
+            `Error fetching details for album ID ${spotifyId}:`,
+            error
+          );
+        }
+      }
+    };
+
+  const fetchUserProfile = async (userId) => {
+      try {
+        // Check if we already have this user's profile
+        if (userProfiles[userId]) return;
+
+        const profile = await getUserProfile(userId);
+        setUserProfiles((prev) => ({
+          ...prev,
+          [userId]: {
+            username: profile.username,
+            profileImage: profile.profileImage || null,
+          },
+        }));
+      } catch (error) {
+        if (IS_DEVELOPMENT) {
+          console.error(`Error fetching profile for user ${userId}:`, error);
+        }
+        // Set a default username if fetch fails
+        setUserProfiles((prev) => ({
+          ...prev,
+          [userId]: {
+            username: profile.username,
+            profileImage: profile.profileImage || null,
+          },
+        }));
+      }
+    };
 
   const fetchSpotifyAccessToken = async () => {
     try {
@@ -143,23 +266,79 @@ export default function ProfileScreen() {
     fetchSpotifyAccessToken();
   }, []);
 
-  const toggleLike = (reviewId) => {
+  const toggleLike = async (reviewId) => {
+    const likeId = likedReviews[reviewId];
+    const wasLiked = !!likeId;
+    const previousLikeCount = likeCounts[reviewId] || 0;
+
     setLikedReviews((prev) => ({
       ...prev,
-      [reviewId]: !prev[reviewId],
+      [reviewId]: wasLiked ? null : true,
     }));
+
+    setLikeCounts((prev) => ({
+      ...prev,
+      [reviewId]: wasLiked
+        ? Math.max(previousLikeCount - 1, 0)
+        : previousLikeCount + 1,
+    }));
+
+    try {
+      if (wasLiked) {
+        await fetch(`${BACKEND_REVIEW_LIKE_URL}/review-like/unlike/${likeId}`, {
+          method: "DELETE",
+        });
+      } else {
+        const response = await fetch(`${BACKEND_REVIEW_LIKE_URL}/review-like/like`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: currentUserId, reviewId }),
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setLikedReviews((prev) => ({
+            ...prev,
+            [reviewId]: data.data, // serverdan gelen likeId
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Like/Unlike Error:", error);
+    }
   };
 
-  const closeFollowersModal = () => {
-    setFollowers([]);
-    setNextFollowersCursor(null);
-    setFollowersModalVisible(false);
+  const fetchLikeCounts = async (reviewsData) => {
+    let likeCountsData = {};
+    await Promise.all(
+      reviewsData.map(async (review) => {
+        try {
+          const response = await fetch(`${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/count`);
+          const data = await response.json();
+          likeCountsData[review.id] = data.success ? data.data : 0;
+        } catch (error) {
+          likeCountsData[review.id] = 0;
+        }
+      })
+    );
+    return likeCountsData;
   };
 
-  const closeFollowingModal = () => {
-    setFollowing([]);
-    setNextFollowingCursor(null);
-    setFollowingModalVisible(false);
+  const fetchLikedReviews = async (reviewsData) => {
+    let likedReviewsData = {};
+    await Promise.all(
+      reviewsData.map(async (review) => {
+        try {
+          const url = `${BACKEND_REVIEW_LIKE_URL}/review-like/${review.id}/is-liked/${currentUserId}`;
+          const response = await fetch(url);
+          const text = await response.text();
+          const data = JSON.parse(text);
+          likedReviewsData[review.id] = data.id ? data.id : null;
+        } catch (error) {
+          likedReviewsData[review.id] = null;
+        }
+      })
+    );
+    return likedReviewsData;
   };
 
   const handleDeleteReview = async (reviewId) => {
@@ -198,6 +377,11 @@ export default function ProfileScreen() {
       setReviews(data.content || []);
       setReviewCount(data.content ? data.content.length : 0);
       console.log("API Yanıtı:", data);
+      const counts = await fetchLikeCounts(data.content || []);
+      setLikeCounts(counts);
+      const likedStatuses = await fetchLikedReviews(data.content || []);
+      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
+
 
       const reviewsWithAlbumNames = await Promise.all(
         data.content.map(async (review) => {
@@ -317,7 +501,7 @@ export default function ProfileScreen() {
       });
       console.log(`✅ Başarıyla eklendi: ${type} - ${spotifyId}`);
     } catch (error) {
-      console.error("❌ Favori eklenirken hata oluştu:", error);
+      
     }
   };
 
@@ -333,7 +517,6 @@ export default function ProfileScreen() {
             return response.data.content;
           })
           .catch((error) => {
-            console.error("❌ Albüm API hatası:", error);
             return null;
           }),
 
@@ -344,7 +527,7 @@ export default function ProfileScreen() {
             return response.data.content;
           })
           .catch((error) => {
-            console.error("❌ Sanatçı API hatası:", error);
+
             return null;
           }),
       ]);
@@ -400,6 +583,7 @@ export default function ProfileScreen() {
           }
 
           images.push({
+            favoriteId: favorite.id,
             id: spotifyId,
             name: data.name,
             image: data.images?.[0]?.url || null,
@@ -409,7 +593,7 @@ export default function ProfileScreen() {
           console.log(`✅ ${spotifyId} için resim başarıyla çekildi.`);
         } catch (error) {
           console.error(
-            `❌ Spotify API çağrısı başarısız (${spotifyId}):`,
+            
             error
           );
         }
@@ -419,7 +603,7 @@ export default function ProfileScreen() {
       return images;
     } catch (error) {
       console.error(
-        "❌ Kullanıcının favori görselleri alınırken hata oluştu:",
+        
         error
       );
       return [];
@@ -428,6 +612,7 @@ export default function ProfileScreen() {
 
   const fetchProfileAndFavorites = async () => {
     try {
+      setProfileLoading(true); 
       console.log("⏳ Kullanıcı profili çekiliyor...");
       const userData = await getUserProfile(currentUserId);
 
@@ -457,8 +642,9 @@ export default function ProfileScreen() {
 
       console.log("✅ Güncellenmiş profil state:", profile);
     } catch (error) {
-      console.error("❌ Kullanıcı veya favoriler alınamadı:", error);
+
     }
+    setProfileLoading(false);
   };
 
   useEffect(() => {
@@ -529,6 +715,38 @@ export default function ProfileScreen() {
       setSelectedItem(item);
       setImageModalVisible(true);
     }
+  };
+
+  const handleLongPressFavorite = (item) => {
+    if (!item || !item.favoriteId) {
+      console.error("❌ Favori item geçersiz:", item);
+      return;
+    }
+  
+    Alert.alert(
+      "Delete Favorite",
+      `Are you sure you want to delete this ${item.type === "album" ? "album" : "artist"}?`,
+      [
+        {
+          text: "No",
+          style: "cancel",
+        },
+        {
+          text: "Yes",
+          onPress: async () => {
+            try {
+              await axios.delete(`${BACKEND_FAVORITE_URL}/favorite/remove-favorite/${item.favoriteId}`);
+              Alert.alert("Success", `${item.type === "album" ? "Album" : "Artist"} deleted.`);
+              fetchProfileAndFavorites(); // Favoriler ekranı güncellensin
+            } catch (error) {
+              console.error("❌ Favori silinirken hata:", error);
+              Alert.alert("Error", "Failed to delete favorite.");
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const [imageModalVisible, setImageModalVisible] = useState(false);
@@ -848,192 +1066,268 @@ export default function ProfileScreen() {
     }
   };
 
-  const ReviewCard = ({
+ const ReviewCard = ({
     review,
     albumImage,
     likedReviews,
     toggleLike,
     setModalVisible,
     setSelectedReviewId,
-    currentUserId,
-    loggedInUserId,
-  }) => {
-    const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
-    const [isOptionsVisible, setIsOptionsVisible] = useState(false);
-    const [updatedComment, setUpdatedComment] = useState(review.comment);
+    userId,
+   }) => {
+     const [menuVisible, setMenuVisible] = useState(false);
+     const router = useRouter();
+     const isOwner = Number(review.userId) === Number(userId);
 
-    const handleDeleteReview = async () => {
-      try {
-        await axios.delete(`${BACKEND_REVIEW_URL}/review/delete/${review.id}`);
-        Alert.alert("Success", "Review deleted successfully!");
-        fetchUsersReviews();
-      } catch (error) {
-        console.error("❌ Error deleting review:", error);
-      }
-      setIsDeleteModalVisible(false);
-      setIsOptionsVisible(false);
-    };
+ 
+     useEffect(() => {
+       if (!userProfiles[review.userId]) {
+         fetchUserProfile(review.userId);
+       }
+     }, [review.userId]);
 
-    const handleUpdateReview = async () => {
-      try {
-        const updatedReview = {
-          ...review,
-          comment: updatedComment,
-        };
-        await axios.put(
-          `${BACKEND_REVIEW_URL}/review/update/${review.id}`,
-          updatedReview
-        );
-        Alert.alert("Success", "Review updated successfully!");
-        fetchUsersReviews();
-      } catch (error) {
-        console.error("❌ Error updating review:", error);
-      }
-      setIsOptionsVisible(false);
-    };
-
-    const confirmDelete = () => {
-      Alert.alert(
-        "Are you sure?",
-        "Do you want to delete your review?",
-        [
-          {
-            text: "No",
-            onPress: () => setIsDeleteModalVisible(false),
-            style: "cancel",
-          },
-          {
-            text: "Yes",
-            onPress: handleDeleteReview,
-          },
-        ],
-        { cancelable: true }
-      );
-    };
+     const AlbumImageModal = () => {
+         const details = albumDetails[selectedAlbumInfo?.spotifyId];
+     
+         return (
+           <Modal
+             visible={imageModalVisible}
+             animationType="fade"
+             transparent={true}
+             onDismiss={() => setSelectedAlbumInfo(null)}
+           >
+             <TouchableWithoutFeedback
+               onPress={() => {
+                 setImageModalVisible(false);
+               }}
+             >
+               <View style={styles.imageModalBackground}>
+                 <TouchableWithoutFeedback>
+                   <View style={styles.imageModalContent}>
+                     <Image
+                       source={{ uri: selectedAlbumInfo?.image }}
+                       style={styles.imageModalImage}
+                     />
+                     <Text style={styles.imageModalText}>
+                       {details?.albumName || "Album"}
+                     </Text>
+                     <Text style={styles.imageModalTextSmall}>
+                       {details?.artistName || "Artist"} •{" "}
+                       {details?.releaseYear || "Year"}
+                     </Text>
+     
+                     <TouchableOpacity
+                       style={styles.spotifyButton}
+                       onPress={() =>
+                         Linking.openURL(
+                           `https://open.spotify.com/album/${selectedAlbumInfo?.spotifyId}`
+                         )
+                       }
+                     >
+                       <FontAwesome name="spotify" size={24} color="white" />
+                       <Text style={styles.spotifyButtonText}>Open in Spotify</Text>
+                     </TouchableOpacity>
+                   </View>
+                 </TouchableWithoutFeedback>
+               </View>
+             </TouchableWithoutFeedback>
+           </Modal>
+         );
+       };
+ 
+     const handlePress = () => {
+        setReviewsModalVisible(false);
+       const details = albumDetails[review.spotifyId];
+       const album = {
+         id: review.spotifyId,
+         name: details?.albumName || review.albumName || "Unknown Album",
+         images: [{ url: albumImages[review.spotifyId] || "" }],
+         release_date:
+           review.releaseDate || `${details?.releaseYear || 2023}-01-01`,
+         artists: [
+           {
+             name: details?.artistName || review.artistName || "Unknown Artist",
+           },
+         ],
+       };
+ 
+       router.push({
+         pathname: "/Screens/ReviewDetail/",
+         params: {
+           review: JSON.stringify({
+             ...review,
+             createdAt: review.createdAt, // Ensure date is included
+             rating: review.rating, // Ensure rating is included
+             comment: review.comment, // Ensure comment is included
+             userId: review.userId, // Ensure user ID is included
+           }),
+           album: JSON.stringify(album),
+           userProfile: JSON.stringify(
+             userProfiles[review.userId] || {
+               username: "Unknown User",
+               profileImage: null,
+             }
+           ),
+           likeCount: likeCounts[review.id] || 0,
+           isLiked: !!likedReviews[review.id],
+           currentUserId: userId,
+         },
+       });
+     };
 
     return (
-      <TouchableWithoutFeedback onPress={() => setIsOptionsVisible(false)}>
-        <View style={styles.reviewCardContainer}>
-          {albumImage ? (
-            <Image source={{ uri: albumImage }} style={styles.albumCover} />
-          ) : (
-            <View style={[styles.albumCover, styles.placeholder]}>
-              <Ionicons name="image-outline" size={40} color="gray" />
-            </View>
-          )}
-
-          <View style={styles.reviewContent}>
-            <Text style={styles.usernameReview}>
-              {review.albumName || `User ${review.spotifyId}`}
-            </Text>
-            <Text style={styles.reviewDate}>
-              {new Date(review.createdAt).toDateString()}
-            </Text>
-            <Text style={styles.reviewText}>{review.comment}</Text>
-            <View style={styles.reviewFooter}>
-              <View style={styles.rating}>
-                {[...Array(5)].map((_, i) => (
-                  <Ionicons
-                    key={i}
-                    name={i < review.rating ? "star" : "star-outline"}
-                    size={16}
-                    color="#FFD700"
-                  />
-                ))}
-              </View>
-              <TouchableOpacity onPress={() => toggleLike(review.id)}>
-                <View style={styles.likeContainer}>
-                  <Ionicons
-                    name={likedReviews[review.id] ? "heart" : "heart-outline"}
-                    size={20}
-                    color={likedReviews[review.id] ? "red" : "white"}
-                  />
-                  <Text style={styles.likeText}>
-                    {likedReviews[review.id]} Likes
+      <View style={styles.cardContainer}>
+      {/* Make the main content area clickable */}
+      <TouchableWithoutFeedback onPress={handlePress}>
+        <View>
+          {/* Profile section */}
+          <View style={styles.profileSection}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Image
+                source={{
+                  uri: getProfileImageUrl(
+                    userProfiles[review.userId]?.profileImage
+                  ),
+                }}
+                style={styles.profilePhoto}
+              />
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.ReviewBy}>Review by </Text>
+                  <Text style={styles.userName}>
+                    {userProfiles[review.userId]?.username ||
+                      `User ${review.userId}`}
                   </Text>
                 </View>
-              </TouchableOpacity>
+                <Text style={styles.reviewDate}>
+                  {new Date(review.createdAt).toDateString()}
+                </Text>
+              </View>
             </View>
+
+            {isOwner && (
+              <Menu
+                visible={menuVisible}
+                onDismiss={() => setMenuVisible(false)}
+                anchor={
+                  <TouchableOpacity
+                    onPress={() => {
+                      console.log("3 noktaya tıklandı 🚀"); // EKLENDİ
+                      setMenuVisible(true);
+                    }}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={24}
+                      color="white"
+                      style={{ marginTop: -20 }}
+                    />
+                  </TouchableOpacity>
+
+                }
+              >
+                <Portal>
+                <Menu.Item
+                  onPress={() => {
+                    setSelectedReviewId(review.id);
+                    setModalVisible(true);
+                    setMenuVisible(false);
+                  }}
+                  title="Delete"
+                  leadingIcon="delete"
+                />
+                <Menu.Item
+                  onPress={() => {
+                    setMenuVisible(false);
+                    const details = albumDetails[review.spotifyId];
+                    const album = {
+                      id: review.spotifyId,
+                      name: details?.albumName || "Unknown Album",
+                      images: [{ url: albumImages[review.spotifyId] || "" }],
+                      release_date:
+                        review.releaseDate ||
+                        `${details?.releaseYear || 2023}-01-01`,
+                      artists: [
+                        {
+                          name: details?.artistName || "Unknown Artist",
+                        },
+                      ],
+                    };
+
+                    router.push({
+                      pathname: "Screens/Review/Entry",
+                      params: {
+                        selectedAlbum: JSON.stringify(album),
+                        reviewToUpdate: JSON.stringify(review),
+                        isUpdateFlow: true,
+                      },
+                    });
+                  }}
+                  title="Update"
+                  leadingIcon="pencil"
+                />
+                </Portal>
+              </Menu>
+            )}
           </View>
 
-          {currentUserId === loggedInUserId && (
-            <TouchableOpacity
-              style={styles.threeDotsButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                setIsOptionsVisible(!isOptionsVisible);
-              }}
-            >
-              <Ionicons name="ellipsis-vertical" size={20} color="white" />
-            </TouchableOpacity>
-          )}
+          <View style={styles.divider} />
 
-          {isOptionsVisible && (
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity
-                style={styles.optionButton}
-                onPress={() => setIsDeleteModalVisible(true)}
+          {/* Album + Review section */}
+          <View style={styles.reviewMainContent}>
+            <Image source={{ uri: albumImage }} style={styles.albumCover} />
+            <View style={styles.reviewTextContainer}>
+              <ScrollView
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={false}
               >
-                <Ionicons name="trash" size={20} color="red" />
-                <Text style={styles.optionText}>Delete</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.optionButton}
-                onPress={() => {
-                  setIsOptionsVisible(false);
-                  router.push({
-                    pathname: "/Screens/Review/Entry",
-                    params: {
-                      selectedAlbum: JSON.stringify({
-                        id: review.spotifyId,
-                        name: review.albumName,
-                        images: [{ url: albumImage }],
-                        release_date: review.createdAt,
-                      }),
-                      reviewToUpdate: JSON.stringify(review),
-                    },
-                  });
-                }}
-              >
-                <Ionicons name="create" size={20} color="green" />
-                <Text style={styles.optionText}>Update</Text>
-              </TouchableOpacity>
+                <Text style={styles.reviewText}>{review.comment}</Text>
+              </ScrollView>
             </View>
-          )}
-
-          {isDeleteModalVisible && (
-            <Modal
-              visible={isDeleteModalVisible}
-              animationType="fade"
-              transparent={true}
-            >
-              <View style={styles.modalBackground}>
-                <View style={styles.deleteModal}>
-                  <Text style={styles.deleteModalTitle}>
-                    Are you sure you want to delete your review?
-                  </Text>
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.buttonNo]}
-                      onPress={() => setIsDeleteModalVisible(false)}
-                    >
-                      <Text style={styles.textStyle}>No</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.button, styles.buttonYes]}
-                      onPress={confirmDelete}
-                    >
-                      <Text style={styles.textStyle}>Yes</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            </Modal>
-          )}
+          </View>
         </View>
       </TouchableWithoutFeedback>
+
+      {/* Footer with rating and like button */}
+      <View style={styles.reviewFooter}>
+        <View style={styles.rating}>
+          {[...Array(5)].map((_, i) => (
+            <Ionicons
+              key={i}
+              name={i < review.rating ? "star" : "star-outline"}
+              size={16}
+              color="#FFD700"
+            />
+          ))}
+        </View>
+        <TouchableOpacity
+          onPress={() => toggleLike(review.id)}
+          style={styles.likeButton}
+        >
+          <View style={styles.likeContainer}>
+            <Ionicons
+              name={likedReviews[review.id] ? "heart" : "heart-outline"}
+              size={20}
+              color={likedReviews[review.id] ? "red" : "white"}
+            />
+            <Text style={styles.likeText}>
+              {likeCounts[review.id] || 0} Likes
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+  if (profileLoading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#1DB954" />
+        <Text style={{ color: "white", marginTop: 10 }}>Loading profile...</Text>
+      </View>
     );
-  };
+  }
 
   return (
     <>
@@ -1182,6 +1476,8 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "albums")}
+                  onLongPress={() => album && handleLongPressFavorite(album)}
+                  delayLongPress={500}
                   style={styles.albumContainer}
                 >
                   {album ? (
@@ -1222,6 +1518,8 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   key={index}
                   onPress={() => handleAlbumOrArtistPress(index, "artists")}
+                  onLongPress={() => artist && handleLongPressFavorite(artist)}
+                  delayLongPress={500}
                   style={styles.artistContainer}
                 >
                   {artist ? (
@@ -1409,30 +1707,6 @@ export default function ProfileScreen() {
             setModalVisible(!modalVisible);
           }}
         >
-          <View style={styles.centeredView}>
-            <View style={styles.modalView}>
-              <Text style={styles.modalText}>
-                Are you sure you want to delete your review?
-              </Text>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonYes]}
-                  onPress={() => {
-                    handleDeleteReview(selectedReviewId);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.textStyle}>Yes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonNo]}
-                  onPress={() => setModalVisible(!modalVisible)}
-                >
-                  <Text style={styles.textStyle}>No</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
         </Modal>
         <View style={styles.modalBackground}>
           <View style={styles.reviewModal}>
@@ -1449,26 +1723,21 @@ export default function ProfileScreen() {
               <FlatList
                 data={reviews}
                 keyExtractor={(item) => item.id.toString()}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={reviewsRefreshing}
-                    onRefresh={onRefreshReviews}
-                    colors={["#1DB954"]}
-                    tintColor="#1DB954"
-                  />
-                }
                 renderItem={({ item }) => (
                   <ReviewCard
-                    review={item}
-                    albumImage={albumImages[item.spotifyId]}
-                    likedReviews={likedReviews}
-                    toggleLike={toggleLike}
-                    setModalVisible={setModalVisible}
-                    setSelectedReviewId={setSelectedReviewId}
-                    currentUserId={currentUserId}
-                    loggedInUserId={loggedInUserId}
+                  review={item}
+                  albumImage={albumImages[item.spotifyId]}
+                  likedReviews={likedReviews}
+                  toggleLike={toggleLike}
+                  setModalVisible={setModalVisible}
+                  setSelectedReviewId={setSelectedReviewId}
+                  userId={currentUserId}
+                  isOwner={Number(loggedInUserId) === Number(currentUserId)}
                   />
                 )}
+                refreshControl={
+                  <RefreshControl refreshing={reviewsRefreshing} onRefresh={onRefreshReviews} />
+                }
               />
             ) : (
               <Text
@@ -1480,6 +1749,36 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+      <Modal
+              animationType="slide"
+              transparent={true}
+              visible={modalVisible}
+              onRequestClose={() => {
+                setModalVisible(!modalVisible);
+              }}
+            >
+              <View style={styles.centeredView}>
+                <View style={styles.modalView}>
+                  <Text style={styles.modalText}>
+                    Are you sure you want to delete your review?
+                  </Text>
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonYes]}
+                      onPress={() => handleDeleteReview(selectedReviewId)}
+                    >
+                      <Text style={styles.textStyle}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonNo]}
+                      onPress={() => setModalVisible(!modalVisible)}
+                    >
+                      <Text style={styles.textStyle}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
 
       {/* Search Modal */}
       <Modal
@@ -2031,16 +2330,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
   },
-  optionsContainer: {
-    backgroundColor: "#333",
-    position: "absolute",
-    top: 30,
-    right: 0,
-    padding: 10,
-    borderRadius: 5,
-    width: 120,
-    zIndex: 100, // Ensure it's on top of other elements
-  },
   optionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -2082,5 +2371,93 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "white",
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "black", // Arka plan uyumlu kalsın
+  },
+  cardContainer: {
+    flexDirection: "column",
+    backgroundColor: "#1E1E1E",
+    margin: 10,
+    borderRadius: 10,
+    padding: 10,
+    overflow: "visible",
+  },
+  profileSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 5,
+  },
+  divider: {
+    borderBottomColor: "#333",
+    borderBottomWidth: 1,
+    marginVertical: 6,
+    marginBottom: 10,
+  },
+  reviewMainContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  reviewTextContainer: {
+    flex: 1,
+    marginLeft: 10,
+    maxHeight: 100,
+  },
+  likeButton: {
+    padding: 5,
+    marginLeft: 10,
+  },
+  profilePhoto: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginRight: 8,
+  },
+  ReviewBy: {
+    color: "lightgrey",
+    fontSize: 12,
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "white",
+    marginBottom: 3,
+  },
+  reviewDate: {
+    fontSize: 10,
+    color: "gray",
+  },
+  albumCover: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  reviewText: {
+    fontSize: 14,
+    color: "lightgray",
+    lineHeight: 20,
+  },
+  reviewFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingHorizontal: 5,
+  },
+  rating: {
+    flexDirection: "row",
+  },
+  likeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  likeText: {
+    color: "white",
+    marginLeft: 5,
+    fontSize: 14,
   },
 });

@@ -27,9 +27,11 @@ export default function Signup() {
 
   // Function to validate password format
   const validatePassword = (password) => {
-    // Password must be at least 6 characters long
-    return password.length >= 6;
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+    return passwordRegex.test(password);
   };
+  
 
   const handleSignup = async () => {
     // Validate email and password
@@ -39,7 +41,7 @@ export default function Signup() {
     }
 
     if (!validatePassword(password)) {
-      Alert.alert("Error", "Password must be at least 6 characters long.");
+      Alert.alert("Error", "Password must be at least 8 characters long and include one uppercase letter, one lowercase letter, one number, and one special character.");
       return;
     }
 

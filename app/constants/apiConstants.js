@@ -1,5 +1,5 @@
 // Buradaki bilgiler demo süreci için. Üretim ortamında backend'e aktarılmalıdır.
-const IP_ADDRESS = "http://localhost"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
+const IP_ADDRESS = "http://192.168.1.105"; //TODO: buranın local host ile neden çalışmadığını anlamaya çalışın
 
 //HARMONIA APP
 
