@@ -627,7 +627,7 @@ export default function HomeScreen() {
         return popularReviews;
       case "Following":
         return followedReviews;
-      case "Yours":
+      case "My reviews":
         return yourReviews;
       default:
         return [];
@@ -893,7 +893,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.tabContainer}>
-        {["Popular", "Following", "Yours"].map((tab) => (
+        {["Popular", "Following", "My reviews"].map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -953,7 +953,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
             );
-          } else if (selectedTab === "Yours") {
+          } else if (selectedTab === "My reviews") {
             return (
               <View style={{ alignItems: "center", justifyContent: "center" }}>
                 <EmptyState message="You don't seem to have posted any reviews." />
