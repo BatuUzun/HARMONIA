@@ -40,7 +40,13 @@ import { Menu } from "react-native-paper";
 import { useRouter } from "expo-router";
 
 const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
-const BATCH_SIZE = 5; // Number of reviews to fetch per batch
+//const BATCH_SIZE = 5; // Number of reviews to fetch per batch
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Constants
+const ALBUM_CACHE_KEY = 'spotify_album_images_cache';
+const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const BATCH_SIZE = 20; // Spotify allows up to 20 IDs per request
 
 export default function HomeScreen() {
   const { userId } = useContext(AuthContext);
@@ -57,7 +63,6 @@ export default function HomeScreen() {
   const [userProfiles, setUserProfiles] = useState({});
   const defaultProfileImage = require("../../../../assets/images/default-profile-photo.webp");
   const [popularReviews, setPopularReviews] = useState([]);
-  const [followedReviews, setFollowedReviews] = useState([]);
   const [yourReviews, setYourReviews] = useState([]);
   const [fetchedReviewIds, setFetchedReviewIds] = useState(new Set());
   const [albumDetails, setAlbumDetails] = useState({});
@@ -65,6 +70,13 @@ export default function HomeScreen() {
   const router = useRouter();
   const screenHeight = Dimensions.get("window").height;
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
+  const [yourReviewsPage, setYourReviewsPage] = useState(0);
+  const [yourReviewsHasMore, setYourReviewsHasMore] = useState(true);
+  const [loadingMoreYourReviews, setLoadingMoreYourReviews] = useState(false);
+  const [followedReviews, setFollowedReviews] = useState([]);
+const [followedReviewsPage, setFollowedReviewsPage] = useState(0);
+const [followedReviewsHasMore, setFollowedReviewsHasMore] = useState(true);
+const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(false);
 
   const getProfileImageUrl = (fileName) => {
     if (!fileName || fileName === "default.png") {
@@ -144,15 +156,65 @@ export default function HomeScreen() {
       }
     }
   };
+  const loadImageCache = async () => {
+    try {
+      const cachedImagesJson = await AsyncStorage.getItem(ALBUM_CACHE_KEY);
+      if (cachedImagesJson) {
+        const cachedImages = JSON.parse(cachedImagesJson);
+        
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(cachedImages).filter(([_, value]) => {
+          return value.timestamp && (now - value.timestamp) < CACHE_EXPIRY;
+        });
+        
+        if (validEntries.length > 0) {
+          // Convert back to object with just URLs
+          return Object.fromEntries(
+            validEntries.map(([key, value]) => [key, value.url])
+          );
+        }
+      }
+      return {};
+    } catch (error) {
+      console.error('Error loading image cache:', error);
+      return {};
+    }
+  };
 
+  const saveImageCache = async (images) => {
+    try {
+      const now = Date.now();
+      const cachedImagesJson = await AsyncStorage.getItem(ALBUM_CACHE_KEY);
+      let cachedImages = {};
+      
+      if (cachedImagesJson) {
+        cachedImages = JSON.parse(cachedImagesJson);
+      }
+      
+      // Add timestamps to new entries
+      const imagesWithTimestamp = Object.entries(images).reduce((acc, [id, url]) => {
+        acc[id] = { url, timestamp: now };
+        return acc;
+      }, {});
+      
+      // Merge with existing cache
+      const updatedCache = { ...cachedImages, ...imagesWithTimestamp };
+      
+      await AsyncStorage.setItem(ALBUM_CACHE_KEY, JSON.stringify(updatedCache));
+    } catch (error) {
+      console.error('Error saving image cache:', error);
+    }
+  };
   const fetchInitialData = async () => {
     setLoading(true);
     setUserProfiles({});
     await fetchPopularReviewIds();
-    await fetchFollowedReviews();
-    await fetchYourReviews();
+    await fetchFollowedReviews(0, false); // Reset to page 0
+    await fetchYourReviews(0, false);     // Reset to page 0
     setLoading(false);
   };
+  
 
   const fetchPopularReviewIds = async () => {
     try {
@@ -327,91 +389,124 @@ export default function HomeScreen() {
     return likedReviewsData;
   };
 
-  const fetchFollowedReviews = async () => {
+  const fetchFollowedReviews = async (page = 0, append = false) => {
     try {
-      const followedUsersUrl = `${BACKEND_USER_FOLLOW_URL}/user-follow/${userId}/followed`;
-      const followedUsersResponse = await fetch(followedUsersUrl);
-      const followedUserIds = await followedUsersResponse.json();
-
-      if (IS_DEVELOPMENT) {
-        console.log("Followed User IDs:", followedUserIds);
-      }
-      if (!followedUserIds || followedUserIds.length === 0) {
-        setFollowedReviews([]);
-        return;
-      }
-
-      const reviewsPromises = followedUserIds.map(async (userId) => {
-        const userReviewsUrl = `${BACKEND_REVIEW_URL}/review/get-reviews/user/${userId}`;
-        const response = await fetch(userReviewsUrl);
-        const data = await response.json();
-        return data.content || [];
+      setLoadingMoreFollowedReviews(true);
+  
+      const response = await fetch(`${BACKEND_REVIEW_URL}/review/followed-reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, page }),
       });
-
-      const reviewsResults = await Promise.all(reviewsPromises);
-      const allReviews = reviewsResults.flat();
-
+  
+      const data = await response.json(); // this is an array (not Page object)
+  
       if (IS_DEVELOPMENT) {
-        console.log("All reviews from followed users:", allReviews);
+        console.log(`Fetched followed reviews (page ${page}):`, data);
       }
-
-      setFollowedReviews(allReviews);
-
-      // Fetch user profiles for followed users' reviews
-      allReviews.forEach((review) => {
+  
+      if (append) {
+        setFollowedReviews((prev) => {
+          const existingIds = new Set(prev.map((r) => r.id));
+          const newUnique = data.filter((r) => !existingIds.has(r.id));
+          return [...prev, ...newUnique];
+        });
+      } else {
+        setFollowedReviews(data);
+      }
+      
+  
+      setFollowedReviewsPage(page);
+      setFollowedReviewsHasMore(data.length === 10); // if less than 10, no more pages
+  
+      // Fetch user profiles, like counts, liked status, and album images
+      data.forEach((review) => {
         fetchUserProfile(review.userId);
       });
-
-      const counts = await fetchLikeCounts(allReviews);
+  
+      const counts = await fetchLikeCounts(data);
       setLikeCounts((prev) => ({ ...prev, ...counts }));
-
-      const likedStatuses = await fetchLikedReviews(allReviews);
+  
+      const likedStatuses = await fetchLikedReviews(data);
       setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
-
-      const images = await fetchAlbumImages(allReviews);
+  
+      const images = await fetchAlbumImages(data);
       setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
     } catch (error) {
       if (IS_DEVELOPMENT) {
         console.error("Error fetching followed users' reviews:", error);
       }
+    } finally {
+      setLoadingMoreFollowedReviews(false);
     }
   };
 
-  const fetchYourReviews = async () => {
+  const fetchYourReviews = async (page = 0, append = false) => {
     try {
-      const url = `${BACKEND_REVIEW_URL}/review/get-reviews/user/${userId}`;
+      setLoadingMoreYourReviews(true);
+      const url = `${BACKEND_REVIEW_URL}/review/get-reviews/user/${userId}?page=${page}`;
       const response = await fetch(url);
       const data = await response.json();
-      setYourReviews(data.content || []);
-
-      // Fetch your own profile
-      fetchUserProfile(userId);
-
-      const counts = await fetchLikeCounts(data.content || []);
-      setLikeCounts((prev) => ({ ...prev, ...counts }));
-
-      const likedStatuses = await fetchLikedReviews(data.content || []);
-      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
-
-      const images = await fetchAlbumImages(data.content || []);
-      setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
+      
+      // Check if there are more pages to load
+      setYourReviewsHasMore(!data.last);
+      setYourReviewsPage(data.number);
+      
+      // If append is true, add to existing reviews, otherwise replace them
+      const reviews = data.content || [];
+      if (append) {
+        setYourReviews((prevReviews) => {
+          const existingIds = new Set(prevReviews.map(r => r.id));
+          const newUnique = reviews.filter(r => !existingIds.has(r.id));
+          return [...prevReviews, ...newUnique];
+        });
+      } else {
+        setYourReviews(reviews);
+      }
+      
+  
+      // Fetch user profile, likes and images for the new reviews
+      if (reviews.length > 0) {
+        // Fetch your own profile
+        fetchUserProfile(userId);
+  
+        const counts = await fetchLikeCounts(reviews);
+        setLikeCounts((prev) => ({ ...prev, ...counts }));
+  
+        const likedStatuses = await fetchLikedReviews(reviews);
+        setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
+  
+        const images = await fetchAlbumImages(reviews);
+        setAlbumImages((prevImages) => ({ ...prevImages, ...images }));
+      }
     } catch (error) {
       if (IS_DEVELOPMENT) {
         console.error("Error fetching your reviews:", error);
       }
+    } finally {
+      setLoadingMoreYourReviews(false);
     }
   };
 
   const fetchAlbumDetailsForAllReviews = async () => {
     if (!accessToken) return;
-
+  
     const allReviews = [...popularReviews, ...followedReviews, ...yourReviews];
-
-    // Aynı albüm id'sine sahip reviewlar olabilir, tekrar fetch etmeyelim
+  
+    // Get unique album IDs to avoid duplicate requests
     const uniqueSpotifyIds = [...new Set(allReviews.map((r) => r.spotifyId))];
-
-    for (const spotifyId of uniqueSpotifyIds) {
+    
+    // Filter out albums we already have details for
+    const newSpotifyIds = uniqueSpotifyIds.filter(id => !albumDetails[id]);
+  
+    for (let i = 0; i < newSpotifyIds.length; i++) {
+      const spotifyId = newSpotifyIds[i];
       try {
+        // Add delay between requests
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+  
         const response = await fetch(
           `https://api.spotify.com/v1/albums/${spotifyId}`,
           {
@@ -420,11 +515,56 @@ export default function HomeScreen() {
             },
           }
         );
+        
+        // Handle rate limiting
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('retry-after') || 1;
+          console.warn(`Rate limited by Spotify API. Waiting ${retryAfter}s before retry for album details ${spotifyId}`);
+          
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000 + 500));
+          
+          const retryResponse = await fetch(
+            `https://api.spotify.com/v1/albums/${spotifyId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          );
+          
+          if (!retryResponse.ok) {
+            console.warn(`Failed to fetch album details ${spotifyId} after retry: ${retryResponse.status}`);
+            continue;
+          }
+          
+          const data = await retryResponse.json();
+          const albumName = data.name || "Unknown Album";
+          const artistName = data.artists?.[0]?.name || "Unknown Artist";
+          const releaseYear = data.release_date ? new Date(data.release_date).getFullYear() : null;
+  
+          setAlbumDetails((prev) => ({
+            ...prev,
+            [spotifyId]: {
+              albumName,
+              artistName,
+              releaseYear,
+            },
+          }));
+          continue;
+        }
+        
+        // Check if response is OK before trying to parse JSON
+        if (!response.ok) {
+          console.warn(`Failed to fetch album ${spotifyId}: ${response.status} ${response.statusText}`);
+          continue;
+        }
+        
         const data = await response.json();
-        const albumName = data.name;
+        
+        const albumName = data.name || "Unknown Album";
         const artistName = data.artists?.[0]?.name || "Unknown Artist";
-        const releaseYear = new Date(data.release_date).getFullYear();
-
+        const releaseYear = data.release_date ? new Date(data.release_date).getFullYear() : null;
+  
         setAlbumDetails((prev) => ({
           ...prev,
           [spotifyId]: {
@@ -438,6 +578,16 @@ export default function HomeScreen() {
           `Error fetching details for album ID ${spotifyId}:`,
           error
         );
+        
+        // Add fallback data to prevent repeated failed requests
+        setAlbumDetails((prev) => ({
+          ...prev,
+          [spotifyId]: {
+            albumName: "Unknown Album",
+            artistName: "Unknown Artist",
+            releaseYear: null,
+          },
+        }));
       }
     }
   };
@@ -463,34 +613,115 @@ export default function HomeScreen() {
     );
     return likeCountsData;
   };
-
-  const fetchAlbumImages = async (reviewsData) => {
-    let images = {};
-    await Promise.all(
-      reviewsData.map(async (review) => {
-        try {
-          const response = await fetch(
-            `${SPOTIFY_API_URL}/${review.spotifyId}`,
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }
-          );
-          const data = await response.json();
-          images[review.spotifyId] = data.images?.[0]?.url || null;
-        } catch (error) {
-          if (IS_DEVELOPMENT) {
-            console.error(
-              `Error fetching album image for ${review.spotifyId}:`,
-              error
-            );
-          }
-          images[review.spotifyId] = null;
+  const useAlbumImages = (initialImages = {}) => {
+    const [albumImages, setAlbumImages] = useState(initialImages);
+    const [isFetching, setIsFetching] = useState(false);
+    
+    useEffect(() => {
+      // Load cache on component mount
+      const loadCache = async () => {
+        const cachedImages = await loadImageCache();
+        setAlbumImages(prev => ({ ...prev, ...cachedImages }));
+      };
+      
+      loadCache();
+    }, []);
+  const fetchAlbumImages = async (reviewsData, accessToken, existingImages = {}) => {
+    let images = { ...existingImages };
+    
+    // Identify which album images we need to fetch
+    const idsToFetch = [];
+    reviewsData.forEach(review => {
+      if (!images[review.spotifyId]) {
+        idsToFetch.push(review.spotifyId);
+      }
+    });
+    
+    if (idsToFetch.length === 0) {
+      return images; // All images already cached
+    }
+    
+    // Process in batches to respect API limits
+    for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
+      const batch = idsToFetch.slice(i, i + BATCH_SIZE);
+      const idsParam = batch.join(',');
+      
+      try {
+        // Add a small delay between batches to prevent rate limiting
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-      })
-    );
+        
+        const response = await fetch(
+          `https://api.spotify.com/v1/albums?ids=${idsParam}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        
+        if (response.status === 429) {
+          // Handle rate limiting
+          const retryAfter = response.headers.get('Retry-After') || 2;
+          console.log(`Rate limited by Spotify, retrying after ${retryAfter} seconds`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          i -= BATCH_SIZE; // Retry this batch
+          continue;
+        }
+        
+        if (!response.ok) {
+          throw new Error(`Spotify API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.albums) {
+          const batchImages = {};
+          data.albums.forEach((album) => {
+            if (album && album.images && album.images.length > 0) {
+              batchImages[album.id] = album.images[0].url;
+            }
+          });
+          
+          // Update images dictionary
+          images = { ...images, ...batchImages };
+          
+          // Save to cache in real-time
+          await saveImageCache(batchImages);
+        }
+      } catch (error) {
+        console.error('Error batch fetching album images:', error);
+      }
+    }
+    
     return images;
   };
-
+  const fetchImages = async (reviewsData, accessToken) => {
+    if (!accessToken || isFetching) return;
+    
+    setIsFetching(true);
+    try {
+      const updatedImages = await fetchAlbumImages(reviewsData, accessToken, albumImages);
+      setAlbumImages(updatedImages);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+  
+  return { albumImages, setAlbumImages, fetchImages, isFetching };
+};
+  const ListFooterComponent = () => {
+    if (
+      (selectedTab === "Popular" && currentBatchIndex < popularReviewIds.length) ||
+      (selectedTab === "My reviews" && loadingMoreYourReviews && yourReviewsHasMore)
+    ) {
+      return (
+        <View style={{ padding: 20, alignItems: "center" }}>
+          <ActivityIndicator size="small" color="#007AFF" />
+        </View>
+      );
+    }
+    return null;
+  };
   const toggleLike = async (reviewId) => {
     const likeId = likedReviews[reviewId];
 
@@ -605,21 +836,24 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       await fetchPopularReviewIds();
-      await fetchFollowedReviews();
-      await fetchYourReviews();
+      await fetchFollowedReviews(0, false); // Reset to page 0
+      await fetchYourReviews(0, false);     // Reset to page 0
     } finally {
       setRefreshing(false);
     }
   };
+  
 
   const onEndReached = async () => {
-    if (
-      selectedTab === "Popular" &&
-      currentBatchIndex < popularReviewIds.length
-    ) {
+    if (selectedTab === "Popular" && currentBatchIndex < popularReviewIds.length) {
       await fetchReviewsBatch(popularReviewIds, currentBatchIndex);
+    } else if (selectedTab === "My reviews" && yourReviewsHasMore && !loadingMoreYourReviews) {
+      await fetchYourReviews(yourReviewsPage + 1, true);
+    } else if (selectedTab === "Following" && followedReviewsHasMore && !loadingMoreFollowedReviews) {
+      await fetchFollowedReviews(followedReviewsPage + 1, true);
     }
   };
+  
 
   const getReviewsForTab = () => {
     switch (selectedTab) {
@@ -923,6 +1157,7 @@ export default function HomeScreen() {
             setModalVisible={setModalVisible}
             setSelectedReviewId={setSelectedReviewId}
             userId={userId}
+            ListFooterComponent={ListFooterComponent}
           />
         )}
         refreshControl={

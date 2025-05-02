@@ -53,7 +53,10 @@ export default function ProfileScreen() {
   const { logout } = useContext(AuthContext);
   const { userId: loggedInUserId } = useContext(AuthContext); // your ID
   const { userId: routeUserId } = useLocalSearchParams(); // ID from route
-  
+  const [reviewPage, setReviewPage] = useState(0);
+const [hasMoreReviews, setHasMoreReviews] = useState(true);
+const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
+
   const [currentUserId, setCurrentUserId] = useState(null); // the profile being viewed
   
   useEffect(() => {
@@ -104,7 +107,9 @@ export default function ProfileScreen() {
   const [selectedCategory, setSelectedCategory] = useState("albums");
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
-
+  const [followingPage, setFollowingPage] = useState(0);
+  const [hasMoreFollowing, setHasMoreFollowing] = useState(true);
+  
   const [refreshing, setRefreshing] = useState(false);
   const [reviewsRefreshing, setReviewsRefreshing] = useState(false);
 
@@ -119,14 +124,15 @@ export default function ProfileScreen() {
   const [likedReviews, setLikedReviews] = useState({});
   const [selectedReviewId, setSelectedReviewId] = useState(null);
   const [nextFollowersCursor, setNextFollowersCursor] = useState(null);
-  const [nextFollowingCursor, setNextFollowingCursor] = useState(null);
-  const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
+    const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
   const [isLoadingFollowing, setIsLoadingFollowing] = useState(false);
   const [likeCounts, setLikeCounts] = useState({});
   const [selectedAlbumInfo, setSelectedAlbumInfo] = useState(null);
   const [userProfiles, setUserProfiles] = useState({});
   const [albumDetails, setAlbumDetails] = useState({});
-
+  const [followerPage, setFollowerPage] = useState(0);
+  const [hasMoreFollowers, setHasMoreFollowers] = useState(true);
+  
 
   const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
   const SPOTIFY_ALBUM_API_URL = "https://api.spotify.com/v1/albums";
@@ -374,26 +380,32 @@ export default function ProfileScreen() {
     }
   };
 
-  const fetchUsersReviews = async () => {
+  const fetchUsersReviews = async (page = 0, append = false) => {
     try {
-      setReviewsRefreshing(true);
-      console.log("🔍 Kullanıcının reviewları getiriliyor...");
-
+      if (append) {
+        setLoadingMoreReviews(true);
+      } else {
+        setReviewsRefreshing(true);
+      }
+  
+      console.log(`🔍 Kullanıcının reviewları getiriliyor... (page: ${page})`);
+  
       const response = await fetch(
-        `${BACKEND_REVIEW_URL}/review/get-reviews/user/${currentUserId}`
+        `${BACKEND_REVIEW_URL}/review/get-reviews/user/${currentUserId}?page=${page}`
       );
       const data = await response.json();
-      setReviews(data.content || []);
-      setReviewCount(data.content ? data.content.length : 0);
-      console.log("API Yanıtı:", data);
-      const counts = await fetchLikeCounts(data.content || []);
-      setLikeCounts(counts);
-      const likedStatuses = await fetchLikedReviews(data.content || []);
-      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
-
-
+      const reviews = data.content || [];
+  
+      // Update page and hasMore
+      setReviewPage(data.number);
+      setHasMoreReviews(!data.last);
+  
+      const counts = await fetchLikeCounts(reviews);
+      const likedStatuses = await fetchLikedReviews(reviews);
+      const images = await fetchAlbumImages(reviews);
+  
       const reviewsWithAlbumNames = await Promise.all(
-        data.content.map(async (review) => {
+        reviews.map(async (review) => {
           try {
             const spotifyResponse = await fetch(
               `${SPOTIFY_API_URL}/${review.spotifyId}`,
@@ -407,29 +419,41 @@ export default function ProfileScreen() {
               albumName: spotifyData.name,
             };
           } catch (error) {
-            console.error(
-              `❌ Albüm adı çekme hatası (${review.spotifyId}):`,
-              error
-            );
+            console.error(`❌ Albüm adı çekme hatası (${review.spotifyId}):`, error);
             return review;
           }
         })
       );
+  
+      if (append) {
+        setReviews((prev) => {
+          const existingIds = new Set(prev.map((r) => r.id));
+          const uniqueNew = reviewsWithAlbumNames.filter((r) => !existingIds.has(r.id));
+          return [...prev, ...uniqueNew];
+        });
+      } else {
+        setReviews(reviewsWithAlbumNames || []);
+      }
+  
+      setReviewCount(data.totalElements || 0);
 
-      setReviews(reviewsWithAlbumNames || []);
-      setReviewCount(reviewsWithAlbumNames ? reviewsWithAlbumNames.length : 0);
-      console.log("API Yanıtı:", reviewsWithAlbumNames);
-
-      const images = await fetchAlbumImages(data.content || []);
-      setAlbumImages(images);
+  
+      setLikeCounts((prev) => ({ ...prev, ...counts }));
+      setLikedReviews((prev) => ({ ...prev, ...likedStatuses }));
+      setAlbumImages((prev) => ({ ...prev, ...images }));
       setLoading(false);
     } catch (error) {
       console.error("❌ Reviewları getirirken hata oluştu:", error);
       setLoading(false);
     } finally {
-      setReviewsRefreshing(false);
+      if (append) {
+        setLoadingMoreReviews(false);
+      } else {
+        setReviewsRefreshing(false);
+      }
     }
   };
+  
 
   useEffect(() => {
     if (accessToken) {
@@ -445,6 +469,8 @@ export default function ProfileScreen() {
     setRefreshing(true);
     try {
       await fetchProfileAndFavorites();
+      await fetchFollowCounts(); // 🔄 Add this line to refresh follower/following counts
+
     } catch (error) {
       console.error("❌ Profil yenilenirken hata oluştu:", error);
     } finally {
@@ -956,59 +982,62 @@ export default function ProfileScreen() {
   const [followers, setFollowers] = useState([]);
   const [following, setFollowing] = useState([]);
 
-  const fetchFollowers = async (cursor = null) => {
+  const fetchFollowers = async (page = 0) => {
     try {
       setIsLoadingFollowers(true);
-      let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followers?userId=${currentUserId}`;
-      if (cursor) {
-        url += `&cursor=${encodeURIComponent(cursor)}`;
-      }
-
+  
+      const url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followers?userId=${currentUserId}&page=${page}`;
       const response = await fetch(url);
       const data = await response.json();
-
+  
       if (data && data.items) {
-        if (cursor) {
-          setFollowers((prev) => [...prev, ...data.items]);
+        if (page > 0) {
+          setFollowers((prev) => {
+            const existingIds = new Set(prev.map((u) => u.userId));
+            const uniqueNew = data.items.filter((u) => !existingIds.has(u.userId));
+            return [...prev, ...uniqueNew];
+          });
         } else {
           setFollowers(data.items);
         }
-        setNextFollowersCursor(data.nextCursor);
+  
+        setFollowerPage(page);
+        setHasMoreFollowers(data.nextPage !== null); // Optional: use your backend's nextPage flag
       } else {
-        console.log("❌ Takipçi verisi doğru gelmedi:", data);
-
-        setFollowers([]);
+        console.warn("❌ Takipçi verisi doğru gelmedi:", data);
       }
     } catch (error) {
       console.error("❌ Takipçiler alınırken hata oluştu:", error);
-      setFollowers([]);
     } finally {
       setIsLoadingFollowers(false);
     }
   };
+  
 
-  const fetchFollowing = async (cursor = null) => {
+  const fetchFollowing = async (page = 0) => {
     try {
       setIsLoadingFollowing(true);
-
-      let url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followings?userId=${currentUserId}`;
-      if (cursor) {
-        url += `&cursor=${encodeURIComponent(cursor)}`; // encode önemli
-      }
-
+  
+      const url = `${BACKEND_USER_FOLLOW_URL}/user-follow/followings?userId=${currentUserId}&page=${page}`;
+  
       const response = await fetch(url);
       const data = await response.json();
-
+  
       console.log("📥 Gelen following data:", data);
-
+  
       if (data && data.items) {
-        if (cursor) {
-          setFollowing((prev) => [...prev, ...data.items]);
+        if (page > 0) {
+          setFollowing((prev) => {
+            const existingIds = new Set(prev.map((u) => u.userId));
+            const newUniqueItems = data.items.filter((u) => !existingIds.has(u.userId));
+            return [...prev, ...newUniqueItems];
+          });
         } else {
           setFollowing(data.items);
         }
-
-        setNextFollowingCursor(data.nextCursor); // Sonuncunun date'ini kullan
+  
+        setFollowingPage(page);
+        setHasMoreFollowing(data.nextPage !== null); // Use backend's nextPage
       } else {
         console.warn("❌ Takip edilen verisi doğru gelmedi:", data);
       }
@@ -1018,6 +1047,8 @@ export default function ProfileScreen() {
       setIsLoadingFollowing(false);
     }
   };
+  
+  
 
   console.log("followers list:", followers);
   console.log("following list:", following);
@@ -1161,27 +1192,28 @@ export default function ProfileScreen() {
        };
  
        router.push({
-         pathname: "/Screens/ReviewDetail/",
-         params: {
-           review: JSON.stringify({
-             ...review,
-             createdAt: review.createdAt, // Ensure date is included
-             rating: review.rating, // Ensure rating is included
-             comment: review.comment, // Ensure comment is included
-             userId: review.userId, // Ensure user ID is included
-           }),
-           album: JSON.stringify(album),
-           userProfile: JSON.stringify(
-             userProfiles[review.userId] || {
-               username: "Unknown User",
-               profileImage: null,
-             }
-           ),
-           likeCount: likeCounts[review.id] || 0,
-           isLiked: !!likedReviews[review.id],
-           currentUserId: userId,
-         },
-       });
+        pathname: "/Screens/ReviewDetail/",
+        params: {
+          id: review.id,
+          comment: review.comment,
+          rating: review.rating,
+          createdAt: review.createdAt,
+          reviewUserId: review.userId,
+      
+          spotifyId: album.id,
+          albumName: album.name,
+          albumImage: album.images[0].url,
+          artistName: album.artists[0].name,
+          releaseYear: new Date(album.release_date).getFullYear(),
+      
+          username: userProfiles[review.userId]?.username || `User ${review.userId}`,
+          profileImage: userProfiles[review.userId]?.profileImage ?? null,
+      
+          isLiked: likedReviews[review.id] ? "true" : "false",
+          likeId: likedReviews[review.id] || null,
+        },
+      });
+      
      };
 
     return (
@@ -1239,11 +1271,18 @@ export default function ProfileScreen() {
         <View style={styles.rating}>
           {[...Array(5)].map((_, i) => (
             <Ionicons
-              key={i}
-              name={i < review.rating ? "star" : "star-outline"}
-              size={16}
-              color="#FFD700"
-            />
+            key={i}
+            name={
+              review.rating >= i + 1
+                ? "star"
+                : review.rating >= i + 0.5
+                ? "star-half"
+                : "star-outline"
+            }
+            size={16}
+            color="#FFD700"
+          />
+          
           ))}
         </View>
         <TouchableOpacity
@@ -1532,50 +1571,51 @@ export default function ProfileScreen() {
               <ActivityIndicator size="large" color="#1DB954" />
             ) : (
               <FlatList
-                data={followers}
-                keyExtractor={(item) => item.userId.toString()}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    onPress={() => {
-                      navigation.navigate("Screens/Profile/Profile/index", {
-                        userId: item.userId,
-                      });
-                      setFollowersModalVisible(false);
-                    }}
-                    style={styles.userItemFollow}
-                  >
-                    <Image
-                      source={
-                        item.profileImage && item.profileImage !== "default.png"
-                          ? {
-                              uri: `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${item.profileImage}`,
-                            }
-                          : defaultProfileImage
-                      }
-                      style={styles.userImageFollow}
-                    />
-                    <Text style={styles.usernameFollow}>{item.username}</Text>
-                  </TouchableOpacity>
-                )}
-                ListFooterComponent={
-                  nextFollowersCursor && (
-                    <TouchableOpacity
-                      onPress={() => fetchFollowers(nextFollowersCursor)}
-                      style={styles.loadMoreButton}
-                      disabled={isLoadingFollowers}
-                    >
-                      {isLoadingFollowers ? (
-                        <ActivityIndicator size="small" color="white" />
-                      ) : (
-                        <Text style={styles.loadMoreText}>Load More</Text>
-                      )}
-                    </TouchableOpacity>
-                  )
-                }
-                ListEmptyComponent={
-                  <Text style={styles.noResultsText}>No followers found</Text>
-                }
-              />
+  data={followers}
+  keyExtractor={(item) => item.userId.toString()}
+  renderItem={({ item }) => (
+    <TouchableOpacity
+      onPress={() => {
+        navigation.navigate("Screens/Profile/Profile/index", {
+          userId: item.userId,
+        });
+        setFollowersModalVisible(false);
+      }}
+      style={styles.userItemFollow}
+    >
+      <Image
+        source={
+          item.profileImage && item.profileImage !== "default.png"
+            ? {
+                uri: `${BACKEND_PROFILE_PICTURE_DOWNLOADER_URL}/s3/download/${item.profileImage}`,
+              }
+            : defaultProfileImage
+        }
+        style={styles.userImageFollow}
+      />
+      <Text style={styles.usernameFollow}>{item.username}</Text>
+    </TouchableOpacity>
+  )}
+  ListFooterComponent={
+    hasMoreFollowers && (
+      <TouchableOpacity
+        onPress={() => fetchFollowers(followerPage + 1)}
+        style={styles.loadMoreButton}
+        disabled={isLoadingFollowers}
+      >
+        {isLoadingFollowers ? (
+          <ActivityIndicator size="small" color="white" />
+        ) : (
+          <Text style={styles.loadMoreText}>Load More</Text>
+        )}
+      </TouchableOpacity>
+    )
+  }
+  ListEmptyComponent={
+    <Text style={styles.noResultsText}>No followers found</Text>
+  }
+/>
+
             )}
           </View>
         </View>
@@ -1628,9 +1668,10 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                 )}
                 ListFooterComponent={
-                  nextFollowingCursor && (
+                  hasMoreFollowing && (
                     <TouchableOpacity
-                      onPress={() => fetchFollowing(nextFollowingCursor)}
+                      onPress={() => fetchFollowing(followingPage + 1)}
+                  
                       style={styles.loadMoreButton}
                       disabled={isLoadingFollowing}
                     >
@@ -1696,6 +1737,18 @@ export default function ProfileScreen() {
                 refreshControl={
                   <RefreshControl refreshing={reviewsRefreshing} onRefresh={onRefreshReviews} />
                 }
+                onEndReached={() => {
+                  if (hasMoreReviews && !loadingMoreReviews) {
+                    fetchUsersReviews(reviewPage + 1, true);
+                  }
+                }}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={
+                  loadingMoreReviews ? (
+                    <ActivityIndicator size="small" color="white" style={{ marginVertical: 20 }} />
+                  ) : null
+                }
+                
               />
             ) : (
               <Text
