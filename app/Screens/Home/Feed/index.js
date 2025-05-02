@@ -41,11 +41,8 @@ import { useRouter } from "expo-router";
 
 const SPOTIFY_API_URL = "https://api.spotify.com/v1/albums";
 //const BATCH_SIZE = 5; // Number of reviews to fetch per batch
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Constants
-const ALBUM_CACHE_KEY = 'spotify_album_images_cache';
-const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const BATCH_SIZE = 20; // Spotify allows up to 20 IDs per request
 
 export default function HomeScreen() {
@@ -77,6 +74,118 @@ export default function HomeScreen() {
 const [followedReviewsPage, setFollowedReviewsPage] = useState(0);
 const [followedReviewsHasMore, setFollowedReviewsHasMore] = useState(true);
 const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(false);
+
+const fetchAlbumImages = async (reviewsData) => {
+  if (!reviewsData || reviewsData.length === 0) {
+    console.log("No reviews to fetch album images for");
+    return {};
+  }
+
+  console.log(`Fetching album images for ${reviewsData.length} reviews`);
+  let images = {};
+
+  // Group reviews by spotifyId to avoid duplicate requests
+  const spotifyIdMap = {};
+  reviewsData.forEach(review => {
+    if (review.spotifyId) {
+      spotifyIdMap[review.spotifyId] = true;
+    }
+  });
+  
+  const uniqueSpotifyIds = Object.keys(spotifyIdMap);
+  console.log(`Found ${uniqueSpotifyIds.length} unique album IDs to fetch`);
+
+  // Process in smaller batches to avoid overwhelming the API
+  const batchSize = 5;
+  for (let i = 0; i < uniqueSpotifyIds.length; i += batchSize) {
+    const batch = uniqueSpotifyIds.slice(i, i + batchSize);
+    
+    // Add a small delay between batches to prevent rate limiting
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    await Promise.all(
+      batch.map(async (spotifyId) => {
+        try {
+          // Skip if we already have this image
+          if (albumImages[spotifyId]) {
+            images[spotifyId] = albumImages[spotifyId];
+            return;
+          }
+          
+          console.log(`Fetching album image for: ${spotifyId}`);
+          const response = await fetch(
+            `https://api.spotify.com/v1/albums/${spotifyId}`,
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+
+          // Handle rate limiting
+          if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '1');
+            console.warn(`Rate limited by Spotify API. Waiting ${retryAfter}s before retry.`);
+            await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
+            
+            // Retry the request
+            const retryResponse = await fetch(
+              `https://api.spotify.com/v1/albums/${spotifyId}`,
+              {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              }
+            );
+            
+            if (!retryResponse.ok) {
+              console.warn(`Failed to fetch album image after retry: ${retryResponse.status}`);
+              images[spotifyId] = null;
+              return;
+            }
+            
+            const retryData = await retryResponse.json();
+            const imageUrl = retryData.images?.[0]?.url || null;
+            images[spotifyId] = imageUrl;
+            console.log(`✅ Retrieved image on retry for ${spotifyId}: ${imageUrl?.substring(0, 30)}...`);
+            return;
+          }
+
+          if (!response.ok) {
+            console.warn(`⚠ Spotify API error for ${spotifyId}: ${response.status}`);
+            images[spotifyId] = null;
+            return;
+          }
+
+          const data = await response.json();
+          const imageUrl = data.images?.[0]?.url || null;
+          images[spotifyId] = imageUrl;
+
+          // Also store album details while we're at it
+          const albumName = data.name || "Unknown Album";
+          const artistName = data.artists?.[0]?.name || "Unknown Artist";
+          const releaseYear = data.release_date ? new Date(data.release_date).getFullYear() : null;
+
+          setAlbumDetails((prev) => ({
+            ...prev,
+            [spotifyId]: {
+              albumName,
+              artistName,
+              releaseYear,
+            },
+          }));
+
+          console.log(`✅ Retrieved image for ${spotifyId}: ${imageUrl?.substring(0, 30)}...`);
+        } catch (error) {
+          console.error(`❌ Error fetching album image (${spotifyId}):`, error);
+          images[spotifyId] = null;
+        }
+      })
+    );
+  }
+
+  return images;
+};
+
+
 
   const getProfileImageUrl = (fileName) => {
     if (!fileName || fileName === "default.png") {
@@ -156,56 +265,9 @@ const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(fal
       }
     }
   };
-  const loadImageCache = async () => {
-    try {
-      const cachedImagesJson = await AsyncStorage.getItem(ALBUM_CACHE_KEY);
-      if (cachedImagesJson) {
-        const cachedImages = JSON.parse(cachedImagesJson);
-        
-        // Filter out expired entries
-        const now = Date.now();
-        const validEntries = Object.entries(cachedImages).filter(([_, value]) => {
-          return value.timestamp && (now - value.timestamp) < CACHE_EXPIRY;
-        });
-        
-        if (validEntries.length > 0) {
-          // Convert back to object with just URLs
-          return Object.fromEntries(
-            validEntries.map(([key, value]) => [key, value.url])
-          );
-        }
-      }
-      return {};
-    } catch (error) {
-      console.error('Error loading image cache:', error);
-      return {};
-    }
-  };
+ 
 
-  const saveImageCache = async (images) => {
-    try {
-      const now = Date.now();
-      const cachedImagesJson = await AsyncStorage.getItem(ALBUM_CACHE_KEY);
-      let cachedImages = {};
-      
-      if (cachedImagesJson) {
-        cachedImages = JSON.parse(cachedImagesJson);
-      }
-      
-      // Add timestamps to new entries
-      const imagesWithTimestamp = Object.entries(images).reduce((acc, [id, url]) => {
-        acc[id] = { url, timestamp: now };
-        return acc;
-      }, {});
-      
-      // Merge with existing cache
-      const updatedCache = { ...cachedImages, ...imagesWithTimestamp };
-      
-      await AsyncStorage.setItem(ALBUM_CACHE_KEY, JSON.stringify(updatedCache));
-    } catch (error) {
-      console.error('Error saving image cache:', error);
-    }
-  };
+  
   const fetchInitialData = async () => {
     setLoading(true);
     setUserProfiles({});
@@ -329,8 +391,12 @@ const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(fal
     });
 
     // Append new reviews to popularReviews
-    setPopularReviews((prevReviews) => [...prevReviews, ...validReviews]);
-
+    setPopularReviews((prevReviews) => {
+      const existingIds = new Set(prevReviews.map((r) => r.id));
+      const newUnique = validReviews.filter((r) => !existingIds.has(r.id));
+      return [...prevReviews, ...newUnique];
+    });
+    
     // Fetch user profiles for new reviews
     validReviews.forEach((review) => {
       fetchUserProfile(review.userId);
@@ -494,36 +560,29 @@ const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(fal
     const allReviews = [...popularReviews, ...followedReviews, ...yourReviews];
   
     // Get unique album IDs to avoid duplicate requests
-    const uniqueSpotifyIds = [...new Set(allReviews.map((r) => r.spotifyId))];
+    const uniqueSpotifyIds = [...new Set(allReviews.map((r) => r.spotifyId).filter(Boolean))];
     
     // Filter out albums we already have details for
     const newSpotifyIds = uniqueSpotifyIds.filter(id => !albumDetails[id]);
+    
+    // Early return if nothing to fetch
+    if (newSpotifyIds.length === 0) return;
+    
+    console.log(`Fetching details for ${newSpotifyIds.length} albums`);
   
-    for (let i = 0; i < newSpotifyIds.length; i++) {
-      const spotifyId = newSpotifyIds[i];
-      try {
-        // Add delay between requests
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-  
-        const response = await fetch(
-          `https://api.spotify.com/v1/albums/${spotifyId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-        
-        // Handle rate limiting
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('retry-after') || 1;
-          console.warn(`Rate limited by Spotify API. Waiting ${retryAfter}s before retry for album details ${spotifyId}`);
-          
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000 + 500));
-          
-          const retryResponse = await fetch(
+    // Process in smaller batches
+    const batchSize = 5;
+    for (let i = 0; i < newSpotifyIds.length; i += batchSize) {
+      const batch = newSpotifyIds.slice(i, i + batchSize);
+      
+      // Add delay between batches
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      
+      await Promise.all(batch.map(async (spotifyId) => {
+        try {
+          const response = await fetch(
             `https://api.spotify.com/v1/albums/${spotifyId}`,
             {
               headers: {
@@ -532,63 +591,76 @@ const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(fal
             }
           );
           
-          if (!retryResponse.ok) {
-            console.warn(`Failed to fetch album details ${spotifyId} after retry: ${retryResponse.status}`);
-            continue;
+          // Handle rate limiting
+          if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '1');
+            console.log(`Rate limited. Waiting ${retryAfter}s before retry for album ${spotifyId}`);
+            
+            await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
+            
+            const retryResponse = await fetch(
+              `https://api.spotify.com/v1/albums/${spotifyId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              }
+            );
+            
+            if (!retryResponse.ok) {
+              console.warn(`Failed to fetch album details for ${spotifyId} after retry: ${retryResponse.status}`);
+              
+              // Add fallback data to prevent repeated failed requests
+              setAlbumDetails((prev) => ({
+                ...prev,
+                [spotifyId]: {
+                  albumName: "Unknown Album",
+                  artistName: "Unknown Artist",
+                  releaseYear: null,
+                },
+              }));
+              
+              return;
+            }
+            
+            const data = await retryResponse.json();
+            processAlbumData(spotifyId, data);
+            return;
           }
           
-          const data = await retryResponse.json();
-          const albumName = data.name || "Unknown Album";
-          const artistName = data.artists?.[0]?.name || "Unknown Artist";
-          const releaseYear = data.release_date ? new Date(data.release_date).getFullYear() : null;
-  
+          if (!response.ok) {
+            console.warn(`Failed to fetch album ${spotifyId}: ${response.status}`);
+            
+            // Add fallback data
+            setAlbumDetails((prev) => ({
+              ...prev,
+              [spotifyId]: {
+                albumName: "Unknown Album",
+                artistName: "Unknown Artist",
+                releaseYear: null,
+              },
+            }));
+            
+            return;
+          }
+          
+          const data = await response.json();
+          processAlbumData(spotifyId, data);
+          
+        } catch (error) {
+          console.error(`Error fetching details for album ID ${spotifyId}:`, error);
+          
+          // Add fallback data
           setAlbumDetails((prev) => ({
             ...prev,
             [spotifyId]: {
-              albumName,
-              artistName,
-              releaseYear,
+              albumName: "Unknown Album",
+              artistName: "Unknown Artist",
+              releaseYear: null,
             },
           }));
-          continue;
         }
-        
-        // Check if response is OK before trying to parse JSON
-        if (!response.ok) {
-          console.warn(`Failed to fetch album ${spotifyId}: ${response.status} ${response.statusText}`);
-          continue;
-        }
-        
-        const data = await response.json();
-        
-        const albumName = data.name || "Unknown Album";
-        const artistName = data.artists?.[0]?.name || "Unknown Artist";
-        const releaseYear = data.release_date ? new Date(data.release_date).getFullYear() : null;
-  
-        setAlbumDetails((prev) => ({
-          ...prev,
-          [spotifyId]: {
-            albumName,
-            artistName,
-            releaseYear,
-          },
-        }));
-      } catch (error) {
-        console.error(
-          `Error fetching details for album ID ${spotifyId}:`,
-          error
-        );
-        
-        // Add fallback data to prevent repeated failed requests
-        setAlbumDetails((prev) => ({
-          ...prev,
-          [spotifyId]: {
-            albumName: "Unknown Album",
-            artistName: "Unknown Artist",
-            releaseYear: null,
-          },
-        }));
-      }
+      }));
     }
   };
 
@@ -613,102 +685,7 @@ const [loadingMoreFollowedReviews, setLoadingMoreFollowedReviews] = useState(fal
     );
     return likeCountsData;
   };
-  const useAlbumImages = (initialImages = {}) => {
-    const [albumImages, setAlbumImages] = useState(initialImages);
-    const [isFetching, setIsFetching] = useState(false);
-    
-    useEffect(() => {
-      // Load cache on component mount
-      const loadCache = async () => {
-        const cachedImages = await loadImageCache();
-        setAlbumImages(prev => ({ ...prev, ...cachedImages }));
-      };
-      
-      loadCache();
-    }, []);
-  const fetchAlbumImages = async (reviewsData, accessToken, existingImages = {}) => {
-    let images = { ...existingImages };
-    
-    // Identify which album images we need to fetch
-    const idsToFetch = [];
-    reviewsData.forEach(review => {
-      if (!images[review.spotifyId]) {
-        idsToFetch.push(review.spotifyId);
-      }
-    });
-    
-    if (idsToFetch.length === 0) {
-      return images; // All images already cached
-    }
-    
-    // Process in batches to respect API limits
-    for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
-      const batch = idsToFetch.slice(i, i + BATCH_SIZE);
-      const idsParam = batch.join(',');
-      
-      try {
-        // Add a small delay between batches to prevent rate limiting
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        const response = await fetch(
-          `https://api.spotify.com/v1/albums?ids=${idsParam}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        
-        if (response.status === 429) {
-          // Handle rate limiting
-          const retryAfter = response.headers.get('Retry-After') || 2;
-          console.log(`Rate limited by Spotify, retrying after ${retryAfter} seconds`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-          i -= BATCH_SIZE; // Retry this batch
-          continue;
-        }
-        
-        if (!response.ok) {
-          throw new Error(`Spotify API error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.albums) {
-          const batchImages = {};
-          data.albums.forEach((album) => {
-            if (album && album.images && album.images.length > 0) {
-              batchImages[album.id] = album.images[0].url;
-            }
-          });
-          
-          // Update images dictionary
-          images = { ...images, ...batchImages };
-          
-          // Save to cache in real-time
-          await saveImageCache(batchImages);
-        }
-      } catch (error) {
-        console.error('Error batch fetching album images:', error);
-      }
-    }
-    
-    return images;
-  };
-  const fetchImages = async (reviewsData, accessToken) => {
-    if (!accessToken || isFetching) return;
-    
-    setIsFetching(true);
-    try {
-      const updatedImages = await fetchAlbumImages(reviewsData, accessToken, albumImages);
-      setAlbumImages(updatedImages);
-    } finally {
-      setIsFetching(false);
-    }
-  };
-  
-  return { albumImages, setAlbumImages, fetchImages, isFetching };
-};
+ 
   const ListFooterComponent = () => {
     if (
       (selectedTab === "Popular" && currentBatchIndex < popularReviewIds.length) ||
